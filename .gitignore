@@ -48,3 +48,4 @@ logs/
 *.code-workspace
 .DS_Store
 Thumbs.db
+portfolio/

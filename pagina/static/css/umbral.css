@@ -1,0 +1,16 @@
+.umbral-contenedor { max-width: 680px; margin: 0 auto; }
+.pagina-umbral h1 { color: #17212e; font-size: clamp(26px, 4vw, 34px); font-weight: 600; }
+.pagina-umbral .descripcion { color: #606975; }
+.formulario-umbral { padding: 28px; border-color: #e5e7eb; border-radius: 20px; box-shadow: none; }
+.formulario-umbral label { display: block; font-weight: 600; margin-bottom: 16px; }
+.umbral-entrada { display: flex; align-items: center; gap: 12px; max-width: 230px; padding: 12px 18px; border: 1px solid #e5e7eb; border-radius: 20px; background: #f4f5f7; }
+.umbral-entrada:focus-within { border-color: #b7c6d8; }
+.umbral-entrada input { width: 100%; min-width: 0; padding: 0; border: 0; background: transparent; color: #17212e; font: inherit; font-size: 32px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.umbral-entrada span { color: #606975; font-size: 24px; }
+.formulario-umbral .boton { margin-top: 24px; background: #17212e; border-radius: 24px; }
+.formulario-umbral .boton:hover { background: #354255; }
+.aviso-exito { color: #17212e; background: #e8f3ff; }
+.pagina-umbral .aviso { margin-bottom: 20px; }
+@media (max-width: 640px) {
+    .formulario-umbral { padding: 20px; }
+}

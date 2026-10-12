@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block titulo %}JEV{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/estilos.css') }}">
+    {% block estilos %}{% endblock %}
+</head>
+<body class="{% block clase_body %}{% endblock %}">
+    <a class="saltar-contenido" href="#contenido">Ir al contenido</a>
+    {% block navegacion %}{% include "partials/navegacion.html" %}{% endblock %}
+    <main id="contenido" class="contenedor">
+        {% block contenido %}{% endblock %}
+    </main>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

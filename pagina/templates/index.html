@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block titulo %}JEVraulio - Chat{% endblock %}
+{% block clase_body %}pagina-chat{% endblock %}
+{% block estilos %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}">
+{% endblock %}
+
+{% block contenido %}
+<div class="chat-contenedor">
+    <div id="conversacion" class="conversacion" role="log" aria-label="Conversación" aria-live="polite" aria-relevant="additions text">
+        <div id="bienvenida" class="bienvenida">
+            <h1>¿En qué te puedo ayudar?</h1>
+            <p>Escribí una pregunta para empezar.</p>
+        </div>
+    </div>
+    <div class="escribir-contenedor">
+        <form id="formulario-chat" class="escribir" action="{{ url_for('chat') }}" method="post" data-max-contexto="{{ max_contexto }}">
+            <label class="solo-lectores" for="pregunta">Tu pregunta</label>
+            <textarea id="pregunta" name="mensaje" rows="1" maxlength="10000" required placeholder="Preguntá lo que quieras"></textarea>
+            <button id="enviar" class="enviar-chat" type="submit" aria-label="Enviar pregunta" title="Enviar pregunta">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5m-6 6 6-6 6 6"/></svg>
+            </button>
+        </form>
+        <p id="estado-chat" class="estado-chat" role="status" aria-live="polite">Enter para enviar · Shift + Enter para una nueva línea</p>
+        <noscript><p class="aviso aviso-error">Activá JavaScript para enviar tu pregunta.</p></noscript>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/chat.js') }}" defer></script>
+{% endblock %}

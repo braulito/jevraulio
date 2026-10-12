@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block titulo %}JEVraulio - Costos{% endblock %}
+{% block clase_body %}pagina-costos{% endblock %}
+{% block estilos %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/costos.css') }}">
+{% endblock %}
+
+{% block contenido %}
+<header class="encabezado">
+    <div>
+        <h1>Costos</h1>
+        <p class="descripcion">Historial de tokens y costos estimados por llamada.</p>
+        {% if not error %}
+        <div class="resumenes-costos">
+        {% if mostrar_openai %}
+        <p class="descripcion resumen-costos">Costo OpenAI: <strong>{{ costo_openai | usd }}</strong> - Total tokens OAI: <strong>{{ tokens_openai | numero }}</strong></p>
+        {% endif %}
+        {% if mostrar_jev %}
+        <p class="descripcion resumen-costos">Costo JEV: <strong>{{ costo_jev | usd }}</strong> - Total tokens JEV: <strong>{{ tokens_jev | numero }}</strong></p>
+        {% endif %}
+        </div>
+        {% endif %}
+    </div>
+    <a class="boton" href="{{ url_for('costos', pagina=pagina if not error else 1, filtros=1, mostrar_jev=mostrar_jev | int, mostrar_openai=mostrar_openai | int) }}">Actualizar</a>
+</header>
+
+{% if error %}
+<div class="aviso aviso-error" role="alert">{{ error }}</div>
+{% else %}
+<form id="filtros-costos" class="filtros-costos" action="{{ url_for('costos') }}" method="get">
+    <input type="hidden" name="filtros" value="1">
+    <fieldset>
+        <legend>Mostrar consumos</legend>
+        <label><input type="checkbox" name="mostrar_openai" value="1" {% if mostrar_openai %}checked{% endif %}> OpenAI (los demás)</label>
+        <label><input type="checkbox" name="mostrar_jev" value="1" {% if mostrar_jev %}checked{% endif %}> JEV</label>
+    </fieldset>
+    <noscript><button class="boton" type="submit">Aplicar</button></noscript>
+</form>
+<section class="panel" aria-labelledby="titulo-registros">
+    <div class="panel-encabezado">
+        <h2 id="titulo-registros">Registro de consumo <span class="contador">{{ total_registros | numero }}</span></h2>
+        <p>Más recientes primero · Fechas en GMT-3 · Importes en USD</p>
+    </div>
+    <div class="tabla-contenedor" tabindex="0" role="region" aria-label="Tabla de costos, desplazable horizontalmente">
+        <table>
+            <caption class="solo-lectores">Datos de consumo de la tabla billing</caption>
+            <thead>
+                <tr>
+                    <th scope="col" class="numerico">ID</th>
+                    <th scope="col">Fecha GMT-3</th>
+                    <th scope="col" class="numerico">Tokens de entrada</th>
+                    <th scope="col" class="numerico">Tokens en caché</th>
+                    <th scope="col" class="numerico">Escritura de caché</th>
+                    <th scope="col" class="numerico">Tokens de salida</th>
+                    <th scope="col" class="numerico">Razonamiento</th>
+                    <th scope="col" class="numerico">Tokens totales</th>
+                    <th scope="col" class="numerico">Costo estimado USD</th>
+                    <th scope="col">Método</th>
+                    <th scope="col">Herramientas</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for registro in registros %}
+                <tr>
+                    <td class="numerico identificador">{{ registro.id }}</td>
+                    <td class="fecha">{{ registro.fecha_utc | fecha_gmt3 }}</td>
+                    <td class="numerico">{{ registro.input_tokens | numero }}</td>
+                    <td class="numerico">{{ registro.cached_tokens | numero }}</td>
+                    <td class="numerico">{{ registro.cache_write_tokens | numero }}</td>
+                    <td class="numerico">{{ registro.output_tokens | numero }}</td>
+                    <td class="numerico">{{ registro.reasoning_tokens | numero }}</td>
+                    <td class="numerico total">{{ registro.total_tokens | numero }}</td>
+                    <td class="numerico costo">{{ registro.costo_estimado_usd | usd }}</td>
+                    <td>{{ registro.metodo if registro.metodo is not none else '—' }}</td>
+                    <td class="herramientas">{{ registro.herramientas or '—' }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="11" class="vacio">{% if not mostrar_jev and not mostrar_openai %}Seleccioná un grupo para mostrar sus consumos.{% else %}No hay registros para los consumos seleccionados.{% endif %}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <nav class="paginacion" aria-label="Paginación de costos">
+        <p>{{ desde | numero }}–{{ hasta | numero }} de {{ total_registros | numero }} registros · Página {{ pagina | numero }} de {{ total_paginas | numero }}</p>
+        <div class="paginacion-controles">
+            {% if pagina > 1 %}
+            <a href="{{ url_for('costos', pagina=pagina - 1, filtros=1, mostrar_jev=mostrar_jev | int, mostrar_openai=mostrar_openai | int) }}" rel="prev">Anterior</a>
+            {% else %}
+            <span aria-disabled="true">Anterior</span>
+            {% endif %}
+            {% if pagina < total_paginas %}
+            <a href="{{ url_for('costos', pagina=pagina + 1, filtros=1, mostrar_jev=mostrar_jev | int, mostrar_openai=mostrar_openai | int) }}" rel="next">Siguiente</a>
+            {% else %}
+            <span aria-disabled="true">Siguiente</span>
+            {% endif %}
+        </div>
+    </nav>
+</section>
+<p class="nota">Los valores sin informar se muestran con un guion (—).</p>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/costos.js') }}" defer></script>
+{% endblock %}

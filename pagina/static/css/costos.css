@@ -1,0 +1,43 @@
+.pagina-costos .contenedor { max-width: 1600px; padding-top: 40px; }
+.pagina-costos .encabezado { align-items: flex-start; gap: 24px; margin-bottom: 28px; }
+.pagina-costos h1 { font-size: clamp(26px, 4vw, 34px); font-weight: 600; color: #17212e; }
+.pagina-costos .descripcion { color: #606975; }
+.pagina-costos .resumen-costos { display: inline-block; margin-top: 16px; padding: 10px 18px; border-radius: 24px; background: #e8f3ff; color: #17212e; font-size: 14px; line-height: 1.8; }
+.pagina-costos .resumen-costos strong { font-weight: 600; font-variant-numeric: tabular-nums; }
+.resumenes-costos { display: flex; flex-direction: column; align-items: flex-start; }
+.filtros-costos { margin-bottom: 20px; }
+.filtros-costos fieldset { display: flex; flex-wrap: wrap; gap: 12px; margin: 0; padding: 0; border: 0; }
+.filtros-costos legend { margin-bottom: 12px; color: #606975; font-size: 13px; }
+.filtros-costos label { display: inline-flex; align-items: center; gap: 10px; padding: 10px 16px; border: 1px solid #e5e7eb; border-radius: 24px; font-size: 14px; cursor: pointer; }
+.filtros-costos label:has(input:checked) { background: #e8f3ff; border-color: #e8f3ff; }
+.filtros-costos input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: #17212e; }
+.pagina-costos .boton { flex-shrink: 0; border-radius: 24px; background: #17212e; padding: 11px 20px; }
+.pagina-costos .boton:hover { background: #354255; }
+.pagina-costos .panel { border: 1px solid #e5e7eb; border-radius: 20px; box-shadow: none; }
+.pagina-costos .panel-encabezado { padding: 22px 24px; }
+.pagina-costos h2 { color: #17212e; font-size: 16px; font-weight: 600; }
+.pagina-costos .contador { color: #606975; background: #f4f5f7; border-radius: 16px; padding: 4px 10px; }
+.pagina-costos .panel-encabezado p, .pagina-costos .nota, .pagina-costos .vacio { color: #606975; }
+.pagina-costos .tabla-contenedor { scrollbar-width: thin; scrollbar-color: #dce1e8 transparent; }
+.pagina-costos table { font-size: 13px; line-height: 1.35; }
+.pagina-costos th { color: #606975; background: #f4f5f7; }
+.pagina-costos th, .pagina-costos td { border-color: #eef0f3; padding: 5px 18px; }
+.pagina-costos .herramientas { line-height: 1.35; }
+.pagina-costos tbody tr:hover { background: #f8fafc; }
+.pagina-costos .costo { color: #17212e; }
+.pagina-costos .identificador { color: #78818d; }
+.pagina-costos .nota { margin-top: 18px; line-height: 1.6; }
+.paginacion { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 24px; border-top: 1px solid #eef0f3; }
+.paginacion p { margin: 0; color: #606975; font-size: 13px; line-height: 1.6; }
+.paginacion-controles { display: flex; gap: 8px; }
+.paginacion-controles a, .paginacion-controles span { padding: 9px 16px; border-radius: 22px; font-size: 13px; font-weight: 600; text-decoration: none; }
+.paginacion-controles a { background: #f4f5f7; color: #17212e; }
+.paginacion-controles a:hover { background: #e8f3ff; }
+.paginacion-controles span { color: #78818d; opacity: .6; }
+@media (max-width: 640px) {
+    .pagina-costos .contenedor { padding-top: 28px; }
+    .pagina-costos .encabezado { gap: 18px; }
+    .pagina-costos .resumen-costos { border-radius: 16px; padding: 10px 14px; }
+    .pagina-costos .panel-encabezado { padding: 20px; }
+    .paginacion { align-items: flex-start; flex-direction: column; padding: 18px 20px; }
+}

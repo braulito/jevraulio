@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block titulo %}JEVraulio - Umbral{% endblock %}
+{% block clase_body %}pagina-umbral{% endblock %}
+{% block estilos %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/umbral.css') }}">
+{% endblock %}
+
+{% block contenido %}
+<div class="umbral-contenedor">
+    <header class="encabezado">
+        <div>
+            <h1>Umbral de confianza</h1>
+            <p class="descripcion">Consultá y ajustá el porcentaje de confianza.</p>
+        </div>
+    </header>
+    {% for categoria, mensaje in get_flashed_messages(with_categories=true) %}
+    <p class="aviso aviso-exito" role="status">{{ mensaje }}</p>
+    {% endfor %}
+    {% if error %}<p class="aviso aviso-error" role="alert">{{ error }}</p>{% endif %}
+    <form class="panel formulario-umbral" action="{{ url_for('umbral') }}" method="post">
+        <input type="hidden" name="csrf_token" value="{{ session.csrf_umbral }}">
+        <label for="porcentaje">Umbral de confianza</label>
+        <div class="umbral-entrada">
+            <input id="porcentaje" name="porcentaje" type="number" min="0" max="100" step="any" value="{{ porcentaje }}" required aria-describedby="ayuda-umbral">
+            <span aria-hidden="true">%</span>
+        </div>
+        <p id="ayuda-umbral" class="descripcion">Ingresá un valor entre 0 y 100. Por ejemplo, 85% se guarda como 0.85.</p>
+        <button type="submit" class="boton">Guardar umbral</button>
+    </form>
+</div>
+{% endblock %}

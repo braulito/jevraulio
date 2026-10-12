@@ -1,0 +1,211 @@
+API Autos - Python 3.10 o superior
+
+1. Abrir PowerShell en la carpeta de la API:
+
+   cd "C:\Users\User Nosis\Documents\Scripts\JEV\api"
+
+2. Instalar las dependencias usando el entorno virtual existente:
+
+   .\api\Scripts\python.exe -m pip install -r reqs.txt
+
+3. Mantener el MCP encendido en otra consola. Desde la carpeta api:
+
+   ..\mcp_autos\.mcp_autos\Scripts\python.exe ..\mcp_autos\server.py
+
+   Si ya está ejecutándose, no iniciar otra instancia.
+   Endpoint MCP: http://127.0.0.1:8003/mcp
+
+4. Para usar /chat, configurar api/.env (se carga automáticamente):
+
+   API_KEY=tu_clave
+   MODELO_OPENAI=gpt-6-luna
+   MAX_RONDAS=5
+
+   MAX_RONDAS es obligatorio y debe ser un entero mayor que cero.
+   Limita la cantidad de llamadas a OpenAI por petición de /chat.
+
+   MODELO_OPENAI es opcional. La API usa gpt-4.1-mini si no está definido.
+   Para gpt-6-luna, la API usa reasoning.effort=none para estas consultas
+   sencillas y service_tier=default para aplicar la tarifa estándar.
+   El archivo .env.example muestra las variables disponibles, sin credenciales.
+   Reiniciar Uvicorn después de modificar .env.
+
+5. Arrancar la API con Uvicorn, desde la carpeta api:
+
+   .\api\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8001 --reload --log-config logging.json
+
+   Si tenés activado el entorno virtual, el comando equivalente es:
+
+   uvicorn main:app --host 127.0.0.1 --port 8001 --reload --log-config logging.json
+
+   Los logs explícitos de la aplicación usan el formato:
+   fecha y hora - archivo - línea - nivel - mensaje
+   Uvicorn conserva su formato habitual para arranque y solicitudes entrantes:
+   INFO:     127.0.0.1:64987 - "POST /chat HTTP/1.1" 200 OK
+   Las solicitudes salientes de HTTPX y los mensajes informativos del MCP
+   no se muestran. logging.json centraliza esta configuración.
+
+6. Abrir Swagger:
+
+   http://127.0.0.1:8001/docs
+
+   GET /mejor_auto
+   Pulsar Try it out y Execute.
+   Respuesta esperada: {"estado": "Ok", "respuesta": "Fiat Pulse"}
+
+   POST /es_mejor_auto
+   Pulsar Try it out y enviar: {"auto": "Fiat Pulse"}
+   Respuesta esperada: {"estado": "Ok", "respuesta": "Si"}
+   Con otro auto, devuelve {"estado": "Ok", "respuesta": "No"}.
+
+   POST /chat
+   Pulsar Try it out y enviar: {"mensaje": "¿Cuál es el mejor auto?"}
+   Otro ejemplo: {"mensaje": "¿El Toyota Corolla es el mejor auto?"}
+   Devuelve estado, respuesta de la LLM y nombres de las herramientas ejecutadas.
+   La LLM elige las herramientas; la API las ejecuta contra el MCP local y
+   entrega sus resultados a OpenAI para que redacte la respuesta final.
+   Cada mensaje es independiente: no hay historial entre peticiones.
+   Al iniciar cada petición de /chat, la API descubre todas las herramientas
+   mediante list_tools(), incluidas páginas adicionales, y toma del MCP sus
+   nombres, descripciones y esquemas. No hay un catálogo fijo en /chat.
+   Los argumentos se validan contra el inputSchema publicado por el MCP.
+   Los resultados conservan su formato MCP, sin exigir estado/respuesta.
+   Al agregar una herramienta al MCP, reiniciar ese servidor para publicarla;
+   la siguiente petición de /chat la descubre sin modificar la API.
+   Las rutas REST /mejor_auto y /es_mejor_auto siguen siendo explícitas;
+   las nuevas herramientas se usan mediante /chat.
+   El mensaje y los resultados de herramientas se envían a OpenAI.
+   /chat requiere cuota y acceso al modelo en la cuenta de OpenAI.
+   Si falta la clave, devuelve HTTP 503. Errores de OpenAI devuelven HTTP 502.
+   Cada llamada a OpenAI tiene 60 segundos de espera; el chat completo, 180.
+
+   Cada llamada a OpenAI entrega un diccionario con todos los campos de usage
+   y costo_estimado_usd a funciones/billing.py, función registrar_consumo.
+   Por ahora esa función solo usa logging.info y muestra en consola:
+   TOKENS TOTALES: 272, COSTO: USD 0.0000332000
+   Los tokens en caché son parte de los de entrada; los de razonamiento,
+   parte de los de salida. No se cuentan dos veces al calcular el costo.
+   El costo es estimado con tarifas estándar de gpt-4.1-mini y su snapshot:
+   entrada USD 0.40, entrada en caché USD 0.10 y salida USD 1.60 por millón.
+   Fuente: https://developers.openai.com/api/docs/models/gpt-4.1-mini
+   También admite gpt-6-luna: entrada USD 0.10, lectura de caché USD 0.01,
+   escritura de caché USD 0.125 y salida USD 0.50 por millón de tokens.
+   Los tokens de escritura ya están incluidos en los de entrada: se aplica
+   su tarifa una sola vez. Con más de 272000 tokens de entrada en Luna,
+   las tarifas de entrada y caché se duplican y la de salida se multiplica por 1.5.
+   Fuente: https://developers.openai.com/api/docs/models/gpt-6-luna
+   Para otro modelo, actualizar PRECIOS en funciones/billing.py; hasta entonces
+   el costo se imprime como null, evitando aplicar una tarifa incorrecta.
+
+   Prompt caching: las instrucciones y herramientas se mantienen estables y
+   se envía prompt_cache_key para favorecer la reutilización del prefijo.
+   OpenAI administra la caché y su vencimiento; no es una caché de respuestas.
+   Un prompt corto o una primera llamada pueden tener cached_tokens igual a 0.
+   El valor real se informa en tokens.input_tokens_details.cached_tokens.
+   Fuente: https://developers.openai.com/api/docs/guides/prompt-caching
+
+   Un nombre vacío o compuesto solo por espacios devuelve HTTP 422.
+   Un fallo del MCP devuelve HTTP 502; el límite de espera devuelve HTTP 504.
+
+Opcional: para apuntar a otro MCP, definir antes de arrancar Uvicorn:
+
+   $env:MCP_AUTOS_URL = "http://127.0.0.1:8003/mcp"
+
+La API usa el cliente del SDK oficial MCP y transporte Streamable HTTP.
+No requiere Node.js. Las rutas de autos funcionan sin OpenAI; /chat usa OpenAI.
+Detener cada proceso con Ctrl+C.
+
+Organización del chat:
+   routers/chat.py: definición de POST /chat.
+   schemas/chat.py: modelos de entrada, salida y validación de campos.
+   funciones/chat_funciones.py: coordinación del chat, configuración de rondas
+   y descubrimiento, validación y ejecución de herramientas MCP.
+   funciones/openai_funciones.py: prompt, caché y solicitudes a OpenAI.
+   funciones/billing.py: tarifas, cálculo de costos y registro de consumo.
+
+Chat con Jeveador (ruta independiente):
+   POST http://127.0.0.1:8001/chat/jev
+   Configurar JEV_URL en api/.env con la dirección base de Jeveador o su
+   endpoint completo /evaluar. La API la carga automáticamente al iniciar.
+   Reiniciar la API después de configurar esa variable.
+   Enviar: {"mensaje": "¿El Fiat Pulse es el mejor auto?"}
+   La API envía el mensaje a Jeveador, recibe sus evaluaciones y consulta
+   la tabla mcps de la base configurada en CADENA para obtener la URL.
+   Esa base debe contener el catálogo compartido con Jeveador, con las
+   columnas nombre, url y habilitado. No se toman URLs de la respuesta de la LLM.
+
+   Sin coincidencias: respuesta explicativa y herramientas vacías.
+   Varios candidatos con recomendación: la API usa el MCP recomendado.
+   Varios candidatos sin recomendación: la LLM hace una pregunta natural basada
+   en sus capacidades, sin nombres técnicos y sin ejecutar herramientas.
+   El usuario contesta normalmente; la página manda la pregunta anterior y
+   su respuesta como contexto. Jeveador evalúa nuevamente y la API selecciona.
+   El campo mcp se conserva por compatibilidad para clientes técnicos, pero
+   la página no necesita enviarlo ni conocer los nombres de los MCP.
+   Si falta información o la cobertura es parcial: respuesta que pide aclaración.
+   Para continuar una aclaración se puede enviar contexto, una lista de mensajes
+   recientes de hasta 10000 caracteres cada uno, junto con mensaje.
+   MAX_CONTEXTO configura la cantidad máxima de mensajes (20 si falta).
+   Debe ser un entero mayor que cero y tener el mismo valor en los .env de
+   página, API y Jeveador. Reiniciar los tres servicios después de cambiarlo.
+   La página conserva ese contexto en la pestaña y lo manda automáticamente.
+   No se guarda historial en el servidor. Al recargar la página se pierde.
+   La API lo envía a Jeveador y a la LLM que prepara los argumentos, para que
+   confirmaciones como "sí" puedan referirse a un pedido anterior.
+
+   Con un candidato: obtener su catálogo, limitar las herramientas a las
+   recomendadas por Jeveador y preparar argumentos con OpenAI (API_KEY y
+   MODELO_OPENAI existentes). Validar los argumentos antes de ejecutar MCP.
+   Si OpenAI pide aclaración, no se ejecuta ninguna herramienta.
+   Esta ruta ejecuta una sola herramienta por petición; si requiere varias,
+   pide precisar qué operación realizar primero.
+   La respuesta al cliente tiene exactamente el mismo formato que /chat:
+   {"estado": "Ok", "respuesta": "Texto para el usuario", "herramientas": []}
+   herramientas contiene solo los nombres que se ejecutaron. Las evaluaciones,
+   estados de coordinación y resultados completos se usan internamente.
+   Un isError del MCP se comunica en respuesta; no se presenta como éxito.
+   Después de ejecutar, se hace otra llamada a OpenAI para redactar una
+   respuesta natural usando el mensaje, el contexto y el resultado real.
+   Esta llamada no dispone de herramientas: no vuelve a ejecutar el MCP.
+   Tanto la preparación como la redacción registran tokens y costo en billing.
+   Jeveador registra su propio uso.
+
+   routers/chat_jev.py: definición de la ruta nueva.
+   schemas/chat_jev.py: entrada, evaluaciones y respuesta.
+   funciones/chat_jev_funciones.py: coordinación y preparación de argumentos.
+   funciones/respuesta_jev_funciones.py: redacción natural tras ejecutar la herramienta.
+   funciones/base_sqlite.py: búsqueda de MCP habilitado por nombre.
+   Las rutas /chat, /mejor_auto y /es_mejor_auto conservan su comportamiento.
+
+Conexión SQLite:
+   Configurar en api/.env la ruta del archivo, por ejemplo:
+   CADENA=C:/ruta/datos.sqlite3
+   Una ruta relativa se interpreta desde la carpeta api.
+   La carpeta contenedora debe existir. SQLite crea el archivo si no existe.
+   No se necesita instalar una librería: sqlite3 viene incluido en Python.
+
+   Usar desde Python:
+       from funciones.base_sqlite import conexion_sqlite
+       with conexion_sqlite() as conexion:
+           fila = conexion.execute("SELECT 1 AS valor").fetchone()
+           valor = fila["valor"]
+
+   El bloque confirma los cambios si termina correctamente, revierte si falla
+   y siempre cierra la conexión. También existe conectar() para administrar
+   manualmente commit, rollback y close.
+
+   La tabla errores tiene codigo (clave primaria) y descripcion.
+   obtener_errores() devuelve {codigo: {"description": descripcion}} para FastAPI.
+   El router /chat obtiene sus descripciones de errores de esta tabla al iniciar.
+   Reiniciar la API después de cambiar esas descripciones en la base.
+   Para inicializar una base nueva desde la carpeta api:
+       .\api\Scripts\python.exe -c "from funciones.base_sqlite import crear_tabla_errores; crear_tabla_errores()"
+   La inicialización agrega los códigos faltantes y conserva las ediciones existentes.
+
+   La tabla billing guarda una fila por respuesta de OpenAI con fecha UTC,
+   tokens de entrada, lectura y escritura de caché, salida, razonamiento,
+   tokens totales, costo estimado USD, método y herramientas en texto.
+   No guarda JSON, prompts ni respuestas. Los valores no disponibles son NULL.
+   Si /chat hace dos llamadas a OpenAI, se guardan dos filas.
+   Para inicializar la tabla en una base nueva:
+       .\api\Scripts\python.exe -c "from funciones.base_sqlite import crear_tabla_billing; crear_tabla_billing()"

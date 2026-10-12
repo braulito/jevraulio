@@ -1,0 +1,10 @@
+<nav class="navegacion" aria-label="Navegación principal">
+    <div class="navegacion-interior">
+        <a class="marca" href="{{ url_for('inicio') }}">JEV<i>raulio</i></a>
+        <div class="navegacion-enlaces">
+            <a href="{{ url_for('inicio') }}" {% if request.endpoint == 'inicio' %}aria-current="page"{% endif %}>Chat</a>
+            <a href="{{ url_for('costos') }}" {% if request.endpoint == 'costos' %}aria-current="page"{% endif %}>Costos</a>
+            <a href="{{ url_for('umbral') }}" {% if request.endpoint == 'umbral' %}aria-current="page"{% endif %}>Umbral</a>
+        </div>
+    </div>
+</nav>

@@ -18,14 +18,14 @@ def respuesta(tiempos, probabilidades):
 
 class PrecipitacionesTests(unittest.TestCase):
     def test_ultimos_valores_y_conversion_horaria(self):
-        with patch("server.httpx.get", return_value=respuesta(
+        with patch("funciones.httpx.get", return_value=respuesta(
             ["2026-10-18T22:00", "2026-10-18T23:00"], [10, 80],
         )) as get:
             self.assertEqual(get_precipitaciones(), {"estado": "Ok", "respuesta": "2026-10-18 20:00, 80 % de lluvias"})
             get.assert_called_once_with(PRECIPITACIONES_URL, timeout=30.0)
 
     def test_cambio_de_fecha_y_porcentaje_cero(self):
-        with patch("server.httpx.get", return_value=respuesta(["2026-01-01T01:00"], [0])):
+        with patch("funciones.httpx.get", return_value=respuesta(["2026-01-01T01:00"], [0])):
             self.assertEqual(get_precipitaciones()["respuesta"], "2025-12-31 22:00, 0 % de lluvias")
 
     def test_datos_invalidos(self):
@@ -36,11 +36,11 @@ class PrecipitacionesTests(unittest.TestCase):
             (["2026-10-18T23:00"], [-1]),
         ]:
             with self.subTest(tiempos=tiempos, probabilidades=probabilidades):
-                with patch("server.httpx.get", return_value=respuesta(tiempos, probabilidades)), self.assertLogs(level="ERROR"):
+                with patch("funciones.httpx.get", return_value=respuesta(tiempos, probabilidades)), self.assertLogs(level="ERROR"):
                     self.assertEqual(get_precipitaciones(), {"estado": "Error", "respuesta": "Error interno", "status_code": 500})
 
     def test_error_de_conexion(self):
-        with patch("server.httpx.get", side_effect=httpx.TimeoutException("Tiempo agotado")), self.assertLogs(level="ERROR"):
+        with patch("funciones.httpx.get", side_effect=httpx.TimeoutException("Tiempo agotado")), self.assertLogs(level="ERROR"):
             self.assertEqual(get_precipitaciones()["estado"], "Error")
 
 
@@ -50,7 +50,7 @@ class DiscoveryTests(unittest.IsolatedAsyncioTestCase):
             tools = {tool.name: tool for tool in (await client.list_tools()).tools}
             self.assertIn("get_clima", tools)
             self.assertEqual(tools["get_precipitaciones"].inputSchema["properties"], {})
-            with patch("server.httpx.get", return_value=respuesta(["2026-10-18T23:00"], [80])):
+            with patch("funciones.httpx.get", return_value=respuesta(["2026-10-18T23:00"], [80])):
                 result = await client.call_tool("get_precipitaciones", {})
             self.assertFalse(result.isError)
             self.assertEqual(json.loads(result.content[0].text), {"estado": "Ok", "respuesta": "2026-10-18 20:00, 80 % de lluvias"})

@@ -1,6 +1,40 @@
-# Arquitectura de JEV
+# Arquitectura de **JEV**_braulio_
 
 Actualizada el 12 de octubre de 2026 a partir del código. Este documento describe la implementación actual, sus contratos y sus límites. Reemplaza la propuesta inicial de sesiones persistentes. No se inspeccionaron archivos `.env`, credenciales ni bases configuradas; las variables y tablas se documentan según el código.
+
+## Contenido
+
+- [Cómo se desarrolló](#cómo-se-desarrolló)
+- [Configuración inicial](#configuración-inicial)
+  - [Crear cuentas y generar las claves de API](#crear-cuentas-y-generar-las-claves-de-api)
+  - [Crear los archivos `.env`](#crear-los-archivos-env)
+- [Componentes](#componentes)
+- [Rutas](#rutas)
+- [Flujo principal del chat con Jeveador](#flujo-principal-del-chat-con-jeveador)
+  - [Selección y continuidad](#selección-y-continuidad)
+  - [Confianza de Jev y significado del umbral](#confianza-de-jev-y-significado-del-umbral)
+  - [Contratos](#contratos)
+  - [Respuesta cuando no hay coincidencias](#respuesta-cuando-no-hay-coincidencias)
+  - [Redacción después de ejecutar](#redacción-después-de-ejecutar)
+- [Flujos conservados](#flujos-conservados)
+- [Contexto y estado](#contexto-y-estado)
+- [Servidores MCP](#servidores-mcp)
+- [Páginas y administración](#páginas-y-administración)
+  - [Chat](#chat)
+  - [Costos](#costos)
+  - [Umbral](#umbral)
+  - [MCPs](#mcps)
+- [SQLite](#sqlite)
+  - [Tabla `mcps`](#tabla-mcps)
+  - [Tabla `config_umbral`](#tabla-config_umbral)
+  - [Tabla `errores`](#tabla-errores)
+  - [Tabla `billing`](#tabla-billing)
+- [Consumo y costos](#consumo-y-costos)
+- [Variables y arranque](#variables-y-arranque)
+- [Organización de módulos](#organización-de-módulos)
+- [Límites y observabilidad](#límites-y-observabilidad)
+- [Límites de la implementación y pendientes](#límites-de-la-implementación-y-pendientes)
+- [Verificación realizada](#verificación-realizada)
 
 ## Cómo se desarrolló
 
@@ -8,9 +42,9 @@ Este proyecto se desarrolló mediante **vibe coding**, con asistencia de intelig
 
 ## Configuración inicial
 
-Antes de iniciar el chat, creá las cuentas de los dos proveedores y los tres archivos de configuración local descritos abajo. Los ejemplos contienen claves ficticias: reemplazalas únicamente en tu máquina.
+Antes de iniciar el chat, creá las cuentas de los dos proveedores y los archivos de configuración local descritos abajo. Los ejemplos contienen claves ficticias: reemplazalas únicamente en tu máquina. El MCP de clima también requiere las cuatro URLs de consulta descritas en su [README](mcp_clima/README.md).
 
-### 1. Crear cuentas y generar las claves de API
+### Crear cuentas y generar las claves de API
 
 **OpenAI**, para preparar argumentos y redactar respuestas:
 
@@ -32,9 +66,9 @@ Referencia: [documentación oficial de Jev en OpenRouter](https://openrouter.ai/
 
 Las claves de ambos proveedores son distintas y no se intercambian. Las consultas reales pueden generar cargos en cada proveedor. No publiques las claves en GitHub, capturas ni mensajes.
 
-### 2. Crear los archivos `.env`
+### Crear los archivos `.env`
 
-Creá manualmente un archivo llamado exactamente `.env` en cada una de estas carpetas: `api/`, `jeveador/` y `pagina/`. En Windows, comprobá que no se guarde como `.env.txt`. Si ya tenés esos archivos, actualizá solo lo necesario sin sobrescribir tu configuración.
+Creá manualmente un archivo llamado exactamente `.env` en cada una de estas carpetas: `api/`, `jeveador/`, `pagina/` y `mcp_clima/`. En Windows, comprobá que no se guarde como `.env.txt`. Si ya tenés esos archivos, actualizá solo lo necesario sin sobrescribir tu configuración.
 
 **`api/.env`**:
 
@@ -84,7 +118,7 @@ Mantené `MAX_CONTEXTO` igual en los tres archivos y reiniciá los servicios des
 | `jeveador/` | FastAPI y Uvicorn | `http://127.0.0.1:8002` | Evalúa capacidades mediante Jev/OpenRouter; no ejecuta tools. |
 | `mcp_autos/` | FastMCP, Streamable HTTP | `http://127.0.0.1:8003/mcp` | Herramientas de ejemplo sobre autos. |
 | `mcp_cocina/` | FastMCP, Streamable HTTP | `http://127.0.0.1:8004/mcp` | Herramientas de ejemplo sobre platos. |
-| `mcp_clima/` | FastMCP, Streamable HTTP | `http://127.0.0.1:8005/mcp` | Última temperatura y probabilidad de precipitaciones del pronóstico horario para CABA, con fecha en GMT-3. |
+| `mcp_clima/` | FastMCP, Streamable HTTP | `http://127.0.0.1:8005/mcp` | Temperatura, lluvias, sensación térmica, presión en superficie y pronóstico conjunto para CABA, con fechas en GMT-3. |
 | SQLite | `sqlite3` de Python | Archivo indicado por `CADENA` | Catálogo, costos y descripciones de errores. |
 | OpenAI | Responses API por HTTPX | Servicio externo | Prepara argumentos, pide aclaraciones y redacta respuestas. |
 | Jev/OpenRouter | API de decisiones por HTTPX | Servicio externo configurado | Decide cobertura, aplicabilidad y recomendación. |
@@ -125,7 +159,7 @@ flowchart LR
 
 API y Jeveador tienen Swagger en `/docs`. Las rutas de negocio usan JSON; MCP usa su protocolo JSON-RPC sobre Streamable HTTP.
 
-## Flujo principal: `/chat/jev`
+## Flujo principal del chat con Jeveador
 
 1. El navegador manda el mensaje actual y contexto reciente a Flask.
 2. Flask valida y reenvía a la API usando `cliente_api.py`. `API_URL` debe incluir `/chat/jev`: la página no agrega la ruta.
@@ -290,6 +324,8 @@ Esta salida no llama a OpenAI, no ejecuta herramientas MCP y no requiere una red
 
 Las instrucciones prohíben inventar elogios, propiedades o una alternativa ganadora si el resultado solo informa una negativa. También distinguen una opinión del sistema de un ranking universal o histórico. La llamada de redacción no tiene herramientas habilitadas, por lo que no vuelve a ejecutar operaciones. Las aclaraciones de selección se redactan con otro prompt, orientado a resolver la intención y evitar preguntas ya contestadas.
 
+Para Clima, la temperatura debe conservar la fecha, hora y zona GMT-3 como dato pronosticado. La redacción de `get_pronostico` informa las variables disponibles y las faltantes, mantiene horarios separados si las fechas difieren y no presenta los valores como condiciones actuales. Un fallo total se explica como imposibilidad de obtener el pronóstico; los fallos parciales no invalidan los demás datos.
+
 Flask responde al navegador solamente `{"respuesta": "Texto para el usuario."}`. Ante un HTTP inválido, error de conexión o contrato incorrecto, devuelve 502 y «Ocurrió un error», registrando el diagnóstico en consola.
 
 ## Flujos conservados
@@ -318,10 +354,17 @@ Las descripciones y esquemas vienen de docstrings/anotaciones de FastMCP, no de 
 | Autos | `es_mejor_auto(auto)` | `Si` para Fiat Pulse; `No` para otros nombres. |
 | Cocina | `es_mejor_plato(plato)` | `Si` para milanesa/milanesas; `No` para otros nombres. |
 | Cocina | `compara_platos(plato_a, plato_b)` | Prefiere milanesas cuando es un candidato; empate para nombres iguales; sin criterio para elegir entre otros dos platos distintos. |
-| Clima | `get_clima()` | Fecha/hora GMT-3 y última temperatura horaria pronosticada para CABA en °C. |
+| Clima | `get_temperatura()` | Fecha/hora GMT-3 y última temperatura del aire pronosticada para CABA en °C. |
 | Clima | `get_precipitaciones()` | Fecha/hora GMT-3 y última probabilidad horaria de lluvias pronosticada para CABA, de 0 a 100%. |
+| Clima | `get_sensacion_termica()` | Fecha/hora GMT-3 y última temperatura aparente pronosticada en °C. |
+| Clima | `get_presion()` | Fecha/hora GMT-3 y última presión atmosférica en superficie pronosticada en hPa. |
+| Clima | `get_pronostico()` | Las cuatro variables en un JSON, con sus fechas y los datos faltantes identificados. |
 
 Autos y Cocina usan respuestas programadas, no rankings históricos. Las comparaciones normalizan espacios exteriores y mayúsculas/minúsculas. Clima consulta Open-Meteo y usa el último registro del pronóstico; ese dato puede ser futuro y no debe presentarse como una observación actual.
+
+Las descripciones de Clima separan los pedidos generales de los específicos. «Qué clima hace», «cómo está el tiempo», «dame el pronóstico» y pedidos con dos o más variables corresponden a `get_pronostico()`. Una consulta solo de temperatura, frío/calor o abrigo corresponde a `get_temperatura()`; lluvias o paraguas a `get_precipitaciones()`; sensación térmica a `get_sensacion_termica()`; presión atmosférica a `get_presion()`. Sin ciudad explícita usan CABA por defecto; no permiten consultar otra localidad. Esta separación se publica como instrucciones en los docstrings y requiere reiniciar el MCP tras modificarlos; la selección real de Jev debe verificarse con consultas de integración.
+
+`get_pronostico()` llama a las cuatro funciones en paralelo. Conserva cada fecha y valor, y devuelve `estado: Ok` mientras exista al menos un dato válido; cada fallo se indica como `sin_datos`. Si las fechas coinciden, publica una fecha común. Si difieren, conserva los horarios individuales, pone la fecha común en `null` y agrega una advertencia. Si las cuatro fallan, devuelve `estado: Error` y `status_code: 500` dentro del JSON de negocio; ese campo no cambia por sí solo el estado HTTP de MCP. La API reconoce el fallo como `error_mcp` y redacta la respuesta. Ver [configuración y contrato de MCP Clima](mcp_clima/README.md).
 
 `mejor_plato()` fue retirado del catálogo de Cocina para reducir su solapamiento con `es_mejor_plato`. Las descripciones deben distinguir verificación de un plato y comparación de dos platos, y coincidir con el código. Una respuesta negativa de la herramienta no la vuelve inaplicable. Las pruebas manuales mostraron que el solapamiento y la formulación pueden influir en Jev; no garantizan una selección estable para todo pedido ni que una confianza alta implique una decisión correcta.
 
@@ -438,7 +481,7 @@ Jeveador comparte instrucciones en `state.reglas` y reduce texto repetido sin tr
 
 ## Variables y arranque
 
-Los tres servicios cargan su configuración automáticamente con `python-dotenv`. Las variables existentes en el proceso tienen prioridad en la carga actual. Se documentan nombres/defaults del código, no valores reales de `.env`.
+API, Jeveador, Página y MCP Clima cargan su configuración con `python-dotenv`. Las variables existentes en el proceso tienen prioridad en la carga actual. Clima carga el `.env` junto a `server.py` y valida que sus cuatro URLs no estén vacías. Se documentan nombres/defaults del código, no valores reales de `.env`.
 
 | Servicio | Variable | Uso/default |
 | --- | --- | --- |
@@ -457,6 +500,10 @@ Los tres servicios cargan su configuración automáticamente con `python-dotenv`
 | Jeveador | `JEV_MODELO` | Modelo del proveedor de decisiones. |
 | Jeveador | `CADENA` | Catálogo y billing. |
 | Jeveador | `UMBRAL_DEFECTO` | Respaldo si falla `config_umbral`; 0.5 si no se convierte a decimal. |
+| MCP Clima | `TEMPERATURA_URL` | URL de pronóstico horario con `temperature_2m`; obligatoria. |
+| MCP Clima | `PRECIPITACIONES_URL` | URL de pronóstico horario con `precipitation_probability`; obligatoria. |
+| MCP Clima | `SENSACION_TERMICA_URL` | URL de pronóstico horario con `apparent_temperature`; obligatoria. |
+| MCP Clima | `PRESION_URL` | URL de pronóstico horario con `surface_pressure`; obligatoria. |
 
 `JEV_URL` tiene significados distintos en API y Jeveador. Cambiar configuración requiere reiniciar cada proceso; cambiar `MAX_CONTEXTO` requiere recargar la página. Las credenciales se leen del entorno y no se mandan al navegador.
 
@@ -499,6 +546,7 @@ Dependencias por componente: `api/reqs.txt`, `jeveador/reqs.txt` y los `requirem
 | `pagina/app.py`, `cliente_api.py`, `bases.py` | Flask, cliente API, lectura de costos y edición de umbral/catálogo MCP. |
 | `pagina/templates/`, `static/` | Interfaz y contexto de navegador. |
 | `mcp_autos/server.py`, `mcp_cocina/server.py`, `mcp_clima/server.py` | Publicación de herramientas. |
+| `mcp_clima/funciones.py` | GET compartido a Open-Meteo y combinación paralela del pronóstico, con resultados parciales y comparación de fechas. |
 
 ## Límites y observabilidad
 
@@ -508,7 +556,8 @@ Dependencias por componente: `api/reqs.txt`, `jeveador/reqs.txt` y los `requirem
 | `/chat` o `/chat/jev` completo | 180 segundos. |
 | API → Jeveador | 60 segundos HTTP. |
 | OpenAI por llamada | 60 segundos HTTP; máximo solicitado de 1.200 tokens de salida. |
-| Cada sesión MCP | 30 segundos. |
+| Consulta de catálogos y ejecución MCP individual | 30 segundos. |
+| Ejecución de `get_pronostico` desde la API | 60 segundos; reúne cuatro consultas HTTP paralelas de hasta 30 segundos cada una. |
 | Jeveador → proveedor | 30 segundos. |
 | SQLite | 30 segundos de espera por bloqueo. |
 
@@ -522,7 +571,7 @@ En `api/funciones/billing.py`, el guardado está activo y no se imprime el dicci
 
 ## Límites de la implementación y pendientes
 
-- Revisar la incorporación de una herramienta de presión atmosférica y su posible solapamiento con `get_clima`. Delimitar las descripciones: temperatura en °C, frío/calor y abrigo para `get_clima`; presión atmosférica en hPa para la nueva herramienta, indicando si mide presión en superficie o a nivel del mar. Mantener temperatura como interpretación predeterminada de «qué clima hace». Verificar la selección de Jev con preguntas específicas, generales y combinadas. El flujo actual ejecuta una sola herramienta por pedido: para «temperatura y presión», decidir entre una herramienta que devuelva ambos datos o ampliar el flujo para ejecutar varias. Pendiente de retomar con el usuario; no implementar aún.
+- Verificar en integración la selección de las cinco herramientas de Clima: preguntas generales y combinadas deben seleccionar `get_pronostico`, y pedidos de una sola variable su herramienta individual. Presión en superficie y pronóstico conjunto ya están implementados; la API ejecuta una llamada MCP y el agregador consulta sus cuatro funciones internas.
 - Crear un método en la API para recibir y guardar en una tabla los errores ocurridos. Integrar su llamada cada vez que se produzca un error en los componentes del sistema, incluido Jeveador. Debe conservar el componente de origen, fecha/hora, tipo de error, mensaje y traceback, sin credenciales ni secretos. Este registro de eventos está pendiente y es distinto del catálogo de descripciones de errores existente.
 - Persistir también los casos en los que el sistema no puede resolver el pedido por falta de herramientas aplicables o porque ninguna supera el umbral, incluida una recomendación de Jev sin herramientas aceptables. Su clasificación queda pendiente. Ya se registran en consola y se normalizan como resultados válidos (200 OK, sin MCP recomendado), con el mensaje de la API «No tengo las herramientas necesarias para responder tu pregunta». Queda pendiente integrarlos con el método y la tabla central de registro, conservando las inconsistencias para analizarlas.
 - El historial no persiste tras recargar. No hay identidad de usuario, permisos por herramienta ni gestión de sesiones en el servidor.
@@ -531,10 +580,12 @@ En `api/funciones/billing.py`, el guardado está activo y no se imprime el dicci
 - SQLite usa operaciones síncronas; algunas lecturas se pasan a un hilo, pero los módulos no configuran WAL ni colas de escritura.
 - Billing está en el camino de respuesta: un fallo puede impedir contestar aun después de consumir tokens o ejecutar una herramienta.
 - Las estimaciones OpenAI dependen de precios locales; no se registra el modelo ni se concilia automáticamente contra el proveedor.
-- `/chat/jev` detecta `isError`; las rutas directas también revisan `estado` del JSON de negocio. Hay que contemplar esa diferencia al agregar herramientas que informan fallos solo en el JSON.
+- `/chat/jev` detecta `isError` y `estado: Error` del JSON de negocio, tanto en `structuredContent` como en bloques de texto JSON. El estado general `Ok` de un pronóstico con variables faltantes conserva el éxito parcial; el fallo total se reconoce como `error_mcp`.
 - El prompt de redacción tiene personalidad firme y ejemplos de autos; la coordinación admite otros dominios pero no hay personalidad por usuario.
 
 ## Verificación realizada
+
+La implementación del pronóstico conjunto completó 4 pruebas del agregador y 42 pruebas de coordinación/redacción de la API con dependencias simuladas, sin cargar `.env` ni consultar servicios reales. Incluye las 16 combinaciones de éxito/fallo de las cuatro variables, fechas distintas, excepciones, respuestas malformadas, éxito parcial y error total. La actualización de las descripciones posterior verificó la sintaxis; esta actualización documental cotejó las herramientas y sus contratos con el código sin volver a ejecutar las suites. Estas comprobaciones no garantizan la selección ni el texto exacto de los modelos en integración.
 
 Se revisaron rutas, funciones, esquemas, MCP, cliente de página, JavaScript, templates, logging y dependencias. No se leyeron `.env` ni bases reales, ni se hicieron consultas pagas a proveedores.
 

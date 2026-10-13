@@ -65,9 +65,11 @@ async def obtener_herramientas_mcp(url: str | None = None) -> list[dict]:
 
 async def llamar_herramienta_mcp(nombre: str, argumentos: dict, url: str | None = None) -> dict:
     url = url if url is not None else os.getenv("MCP_AUTOS_URL")
+    # El pronóstico reúne cuatro consultas paralelas de hasta 30 segundos.
+    tiempo_espera = 60 if nombre == "get_pronostico" else 30
     try:
-        with anyio.fail_after(30):
-            async with httpx.AsyncClient(timeout=30) as client:
+        with anyio.fail_after(tiempo_espera):
+            async with httpx.AsyncClient(timeout=tiempo_espera) as client:
                 async with streamable_http_client(url, http_client=client) as (read, write, _):
                     async with ClientSession(read, write) as session:
                         await session.initialize()

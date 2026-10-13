@@ -188,7 +188,19 @@ async def coordinar_chat_jev(consulta: ConsultaChatJev) -> RespuestaChatJev:
         return RespuestaChatJev(estado="requiere_aclaracion", respuesta=aclaracion, **comunes)
     resultado = await llamar_herramienta_mcp(nombre, argumentos, mcp["url"])
     texto = await redactar_respuesta(consulta.mensaje, consulta.contexto, nombre, argumentos, resultado)
-    return RespuestaChatJev(estado="error_mcp" if resultado.get("isError") else "Ok", respuesta=texto, herramientas=[nombre], resultado=resultado, **comunes)
+    error_mcp = bool(resultado.get("isError"))
+    contenido = resultado.get("structuredContent")
+    if isinstance(contenido, dict) and contenido.get("estado") == "Error":
+        error_mcp = True
+    for item in resultado.get("content", []):
+        if item.get("type") == "text":
+            try:
+                contenido = json.loads(item.get("text", ""))
+            except (TypeError, ValueError):
+                continue
+            if isinstance(contenido, dict) and contenido.get("estado") == "Error":
+                error_mcp = True
+    return RespuestaChatJev(estado="error_mcp" if error_mcp else "Ok", respuesta=texto, herramientas=[nombre], resultado=resultado, **comunes)
 
 
 async def responder_chat_jev(consulta: ConsultaChatJev) -> RespuestaChatJev:

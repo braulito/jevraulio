@@ -52,6 +52,17 @@ class RespuestaJevTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(json.loads(entrada[-1]["output"]), resultado)
         self.assertEqual(llamada.args[2], [])
 
+    async def test_pronostico_parcial_se_envia_con_reglas_de_fechas_y_faltantes(self):
+        resultado = {"structuredContent": {"estado": "Ok", "respuesta": {"fechas_coinciden": False, "datos": {
+            "temperatura": {"estado": "Ok", "fecha_local": "2026-10-18 20:00", "valor": "13.2 °C"},
+            "presion": {"estado": "sin_datos", "respuesta": "No hay datos para presion"},
+        }}}}
+        await self.c["redactar_respuesta"]("dame el pronostico", [], "get_pronostico", {}, resultado)
+        entrada = self.llm.consultar_llm.call_args.args[1]
+        self.assertIn("pronóstico parcial válido", entrada[0]["content"])
+        self.assertIn("horario propio de cada variable", entrada[0]["content"])
+        self.assertEqual(json.loads(entrada[-1]["output"]), resultado)
+
     async def test_texto_vacio_no_se_presenta_como_respuesta(self):
         self.llm.extraer_texto.return_value = ""
         with self.assertRaises(HTTPException) as error:

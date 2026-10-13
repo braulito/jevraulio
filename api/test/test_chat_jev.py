@@ -278,6 +278,27 @@ class ChatJevTests(unittest.IsolatedAsyncioTestCase):
         r = await self.flujo([evaluacion()])
         self.assertEqual(r.estado, "error_mcp")
 
+    async def test_error_de_negocio_mcp_no_informa_exito(self):
+        for resultado in [
+            {"isError": False, "structuredContent": {"estado": "Error", "respuesta": "No hay datos", "status_code": 500}},
+            {"isError": False, "content": [{"type": "text", "text": '{"estado":"Error","respuesta":"No hay datos","status_code":500}'}]},
+        ]:
+            with self.subTest(resultado=resultado):
+                self.c["llamar_herramienta_mcp"].return_value = resultado
+                r = await self.flujo([evaluacion()])
+                self.assertEqual(r.estado, "error_mcp")
+                self.assertEqual(r.resultado, resultado)
+
+    async def test_pronostico_parcial_sigue_siendo_exitoso(self):
+        self.c["llamar_herramienta_mcp"].return_value = {"structuredContent": {
+            "estado": "Ok", "respuesta": {"datos": {
+                "temperatura": {"estado": "Ok", "valor": "13.2 °C"},
+                "presion": {"estado": "sin_datos", "respuesta": "No hay datos para presion"},
+            }},
+        }}
+        r = await self.flujo([evaluacion()])
+        self.assertEqual(r.estado, "Ok")
+
     async def test_json_mcp_en_texto_extrae_respuesta(self):
         self.c["llamar_herramienta_mcp"].return_value = {
             "content": [{"type": "text", "text": '{\n "estado": "Ok", "respuesta": "Fiat Pulse"\n}'}],

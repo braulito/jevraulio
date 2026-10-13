@@ -11,7 +11,7 @@
     <div>
         <h1>Costos</h1>
         <p class="descripcion">Historial de tokens y costos estimados por llamada.</p>
-        {% if not error %}
+        {% if not error and not sin_informacion %}
         <div class="resumenes-costos">
         {% if mostrar_openai %}
         <p class="descripcion resumen-costos">Costo OpenAI: <strong>{{ costo_openai | usd }}</strong> - Total tokens OAI: <strong>{{ tokens_openai | numero }}</strong></p>
@@ -37,6 +37,11 @@
     </fieldset>
     <noscript><button class="boton" type="submit">Aplicar</button></noscript>
 </form>
+{% if sin_informacion %}
+<section class="panel">
+    <p class="vacio" role="status">No hay información disponible.</p>
+</section>
+{% else %}
 <section class="panel" aria-labelledby="titulo-registros">
     <div class="panel-encabezado">
         <h2 id="titulo-registros">Registro de consumo <span class="contador">{{ total_registros | numero }}</span></h2>
@@ -98,6 +103,7 @@
     </nav>
 </section>
 <p class="nota">Los valores sin informar se muestran con un guion (—).</p>
+{% endif %}
 {% endif %}
 {% endblock %}
 {% block scripts %}

@@ -41,6 +41,7 @@
     <div class="panel-encabezado">
         <h2 id="titulo-catalogo">Catálogo de servidores <span class="contador">{{ registros | length | numero }}</span></h2>
     </div>
+    {% if registros %}
     <div class="tabla-contenedor" tabindex="0" role="region" aria-label="Catálogo MCP, desplazable horizontalmente">
         <table>
             <caption class="solo-lectores">Servidores MCP y su estado de habilitación</caption>
@@ -71,12 +72,13 @@
                     </td>
                     <td><a class="boton borrar-mcp" href="{{ url_for('borrar_mcp', id_mcp=registro.id) }}" aria-label="Borrar {{ registro.nombre }}">Borrar</a></td>
                 </tr>
-            {% else %}
-                <tr><td colspan="5" class="vacio">Todavía no hay servidores MCP en el catálogo.</td></tr>
             {% endfor %}
             </tbody>
         </table>
     </div>
+    {% else %}
+    <p class="vacio" role="status">No hay información disponible.</p>
+    {% endif %}
 </section>
 {% endif %}
 {% endblock %}

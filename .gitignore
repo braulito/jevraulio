@@ -40,8 +40,18 @@ dist/
 *.sqlite3-*
 *.log
 logs/
-*.bak
-*.backup
+
+# Backups de archivos y carpetas (incluye variantes con fecha o numero)
+*.[Bb][Aa][Kk]*
+*.[Bb][Aa][Cc][Kk][Uu][Pp]*
+*.[Bb][Kk][Pp]*
+*.old
+*.orig
+*.rej
+*~
+*_[Bb][Aa][Cc][Kk][Uu][Pp]*
+[Bb][Aa][Cc][Kk][Uu][Pp]_*
+[Bb][Aa][Cc][Kk][Uu][Pp]*/
 
 # Preferencias locales del editor y del sistema
 .vscode/

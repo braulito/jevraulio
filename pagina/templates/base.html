@@ -13,6 +13,10 @@
     <main id="contenido" class="contenedor">
         {% block contenido %}{% endblock %}
     </main>
+    {% if error_modal %}
+    {% include "partials/modal_error.html" %}
+    <script src="{{ url_for('static', filename='js/modal_error.js') }}" defer></script>
+    {% endif %}
     {% block scripts %}{% endblock %}
 </body>
 </html>

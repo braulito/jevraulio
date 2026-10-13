@@ -1,0 +1,3 @@
+# Desde la carpeta mcp_clima, en PowerShell:
+.\clima\Scripts\python.exe -m pip install -r requirements.txt
+.\clima\Scripts\python.exe server.py --servidor

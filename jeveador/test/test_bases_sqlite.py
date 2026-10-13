@@ -69,6 +69,7 @@ class TestBasesSqlite(unittest.TestCase):
         self.assertEqual(filas, [
             {"id": 1, "nombre": "mcp_autos", "url": "http://localhost:8003/mcp", "habilitado": 1},
             {"id": 2, "nombre": "mcp_cocina", "url": "http://localhost:8004/mcp", "habilitado": 1},
+            {"id": 3, "nombre": "mcp_clima", "url": "http://localhost:8005/mcp", "habilitado": 1},
         ])
 
     def test_mcps_existente_conserva_cambios_y_no_repone_datos(self):
@@ -81,6 +82,7 @@ class TestBasesSqlite(unittest.TestCase):
             filas = [dict(fila) for fila in conexion.execute("SELECT * FROM mcps")]
         self.assertEqual(filas, [
             {"id": 1, "nombre": "mcp_autos", "url": "http://prueba.invalid/mcp", "habilitado": 0},
+            {"id": 3, "nombre": "mcp_clima", "url": "http://prueba.invalid/mcp", "habilitado": 0},
         ])
         with conexion_sqlite() as conexion:
             conexion.execute("DELETE FROM mcps")
@@ -95,6 +97,7 @@ class TestBasesSqlite(unittest.TestCase):
         self.assertEqual(obtener_mcps(), [
             {"id": 1, "nombre": "mcp_autos", "url": "http://localhost:8003/mcp", "habilitado": 1},
             {"id": 2, "nombre": "mcp_cocina", "url": "http://localhost:8004/mcp", "habilitado": 0},
+            {"id": 3, "nombre": "mcp_clima", "url": "http://localhost:8005/mcp", "habilitado": 1},
         ])
         with conexion_sqlite() as conexion:
             conexion.execute("DELETE FROM mcps")

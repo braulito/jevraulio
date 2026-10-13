@@ -1,0 +1,33 @@
+.pagina-mcps .aviso { margin-bottom: 20px; }
+.pagina-mcps .aviso-exito { background: #e8f3ff; color: #17212e; }
+.pagina-mcps .borrar-mcp { background: #fff2f3; color: #922d34; padding: 8px 16px; }
+.pagina-mcps .borrar-mcp:hover { background: #f9e2e5; }
+.confirmar-borrado { max-width: 680px; padding: 24px; }
+.confirmar-borrado form { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 24px; }
+.pagina-mcps .cancelar-mcp { background: #f4f5f7; color: #17212e; }
+.agregar-mcp { padding: 24px; margin-bottom: 24px; }
+.agregar-mcp h2 { margin-bottom: 20px; }
+.campos-mcp { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(240px, 2fr) auto; align-items: end; gap: 16px; }
+.campos-mcp label { display: block; margin-bottom: 8px; color: #606975; font-size: 13px; }
+.campos-mcp input { width: 100%; padding: 11px 14px; border: 1px solid #e5e7eb; border-radius: 14px; background: #f4f5f7; color: #17212e; font: inherit; font-size: 14px; }
+.campos-mcp .boton { min-height: 42px; }
+@media (max-width: 800px) {
+    .campos-mcp { grid-template-columns: 1fr; }
+    .agregar-mcp { padding: 20px; }
+    .campos-mcp .boton { justify-self: start; }
+}
+.pagina-mcps td { padding-top: 10px; padding-bottom: 10px; }
+.url-mcp { min-width: 240px; overflow-wrap: anywhere; }
+.switch-mcp { display: inline-flex; align-items: center; gap: 10px; padding: 7px 4px; border: 0; border-radius: 8px; background: transparent; color: #606975; font: inherit; cursor: pointer; white-space: nowrap; }
+.switch-mcp:focus-visible { outline: 2px solid #1765a5; outline-offset: 4px; }
+.switch-pista { position: relative; display: inline-block; width: 46px; height: 26px; border-radius: 20px; background: #8a929d; transition: background 150ms; }
+.switch-circulo { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0003; transition: transform 150ms; }
+.switch-mcp[aria-checked="true"] { color: #1765a5; }
+.switch-mcp[aria-checked="true"] .switch-pista { background: #1765a5; }
+.switch-mcp[aria-checked="true"] .switch-circulo { transform: translateX(20px); }
+.switch-texto { min-width: 28px; font-size: 12px; font-weight: 700; }
+.switch-descripcion { font-size: 12px; }
+.switch-mcp:hover .switch-pista { filter: brightness(0.9); }
+@media (prefers-reduced-motion: reduce) {
+    .switch-pista, .switch-circulo { transition: none; }
+}

@@ -1,8 +1,9 @@
 # Chat y costos
 
-Aplicación Flask que consulta `billing` y permite editar `config_umbral`.
+Aplicación Flask que consulta `billing`, permite editar `config_umbral` y
+administrar el catálogo `mcps`.
 No crea tablas ni bases de datos. Costos usa conexiones de solo lectura;
-guardar el umbral abre la base existente con permiso de escritura.
+guardar el umbral o modificar el catálogo abre la base existente con permiso de escritura.
 
 Desde esta carpeta, usando el entorno virtual existente:
 
@@ -18,6 +19,12 @@ La página `/umbral` (también `/umbral.html`) muestra el valor del registro
 `config_umbral.id = 1` multiplicado por 100. Al guardar, divide el porcentaje
 por 100 y actualiza únicamente ese registro. Acepta porcentajes de 0 a 100,
 incluidos decimales. La tabla y el registro deben existir previamente.
+
+La página `/mcps` (también `/mcps.html`) lista nombre, URL y estado de los MCPs.
+El formulario Agregar MCP pide nombre y URL HTTP/HTTPS; guarda siempre
+`habilitado = 0`, incluso si se envía otro estado. Un nombre duplicado se rechaza.
+Para habilitarlo o deshabilitarlo se usa el interruptor de su fila. La tabla debe
+existir previamente. Los cambios se usan en las próximas consultas de Jeveador.
 
 `API_URL` debe contener la URL completa del endpoint `/chat` que recibe
 `{"mensaje": "..."}`. Flask envía la consulta desde el servidor, espera hasta

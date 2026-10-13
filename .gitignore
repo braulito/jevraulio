@@ -19,6 +19,7 @@ env/
 /pagina/pagina/
 /mcp_autos/.mcp_autos/
 /mcp_cocina/mcp_cocina/
+/mcp_clima/clima/
 
 # Archivos generados y caches
 __pycache__/

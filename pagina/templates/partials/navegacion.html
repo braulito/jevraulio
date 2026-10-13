@@ -5,6 +5,7 @@
             <a href="{{ url_for('inicio') }}" {% if request.endpoint == 'inicio' %}aria-current="page"{% endif %}>Chat</a>
             <a href="{{ url_for('costos') }}" {% if request.endpoint == 'costos' %}aria-current="page"{% endif %}>Costos</a>
             <a href="{{ url_for('umbral') }}" {% if request.endpoint == 'umbral' %}aria-current="page"{% endif %}>Umbral</a>
+            <a href="{{ url_for('mcps') }}" {% if request.endpoint in ('mcps', 'crear_mcp', 'borrar_mcp') %}aria-current="page"{% endif %}>MCPs</a>
         </div>
     </div>
 </nav>

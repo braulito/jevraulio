@@ -49,7 +49,7 @@ class TestJev(unittest.TestCase):
         self.cliente = TestClient(app)
         self.addCleanup(self.cliente.close)
 
-    def transporte(self, estado="sirve", codigo_jev=200, codigo_mcp=200, estados=None, recomendado="mcp_0", confianza=0.92, respuestas_extra=None):
+    def transporte(self, estado="sirve", codigo_jev=200, codigo_mcp=200, estados=None, recomendado="mcp_0", confianza=0.92, respuestas_extra=None, intencion="resolver_consulta", mensaje="¿Cuál es el mejor auto?"):
         peticiones = []
 
         def responder(request):
@@ -61,9 +61,12 @@ class TestJev(unittest.TestCase):
                     return httpx.Response(codigo_jev, json={"error": "detalle privado del proveedor"})
                 datos = json.loads(request.content)
                 self.assertEqual(datos["model"], "typesafe/jev-1.13")
-                self.assertEqual(datos["state"]["mensaje"], "¿Cuál es el mejor auto?")
+                self.assertEqual(datos["state"]["mensaje"], mensaje)
                 self.assertNotIn("JEV_KEY", datos["state"])
-                answers = {"recomendacion": {"type": "choice", "choice": "ninguno" if estado == "no_sirve" else recomendado}}
+                answers = {
+                    "intencion": {"type": "choice", "choice": intencion},
+                    "recomendacion": {"type": "choice", "choice": "ninguno" if estado == "no_sirve" else recomendado},
+                }
                 for indice, catalogo in enumerate(datos["state"]["mcps"]):
                     cobertura = estados[catalogo["nombre"]] if estados else estado
                     answers[f"cobertura_{indice}"] = {"type": "choice", "choice": cobertura,
@@ -111,17 +114,76 @@ class TestJev(unittest.TestCase):
         self.assertEqual(solicitud["state"]["contexto"], consulta.contexto)
         self.assertEqual(solicitud["state"]["mcps"], CATALOGOS)
         self.assertEqual(solicitud["state"]["reglas"], jev_funciones.INSTRUCCIONES)
-        self.assertEqual(set(solicitud["questions"]), {"recomendacion", "cobertura_0", "herramienta_0_0", "herramienta_0_1"})
+        self.assertEqual(set(solicitud["questions"]), {"intencion", "recomendacion", "cobertura_0", "herramienta_0_0", "herramienta_0_1"})
         for pregunta in solicitud["questions"].values():
             self.assertIn("state.reglas", pregunta["instructions"])
             self.assertNotIn(jev_funciones.INSTRUCCIONES, pregunta["instructions"])
         serializada = json.dumps(solicitud, ensure_ascii=False)
         self.assertEqual(serializada.count(jev_funciones.INSTRUCCIONES), 1)
 
+    def test_capacidades_actuales_cambian_con_mcps_habilitados(self):
+        mensaje = "¿Qué datos me podés ofrecer?"
+        cocina = {"id": 2, "nombre": "mcp_cocina", "url": "http://127.0.0.1:8004/mcp", "habilitado": 1}
+        nuevo = {"id": 3, "nombre": "mcp_nuevo", "url": "http://127.0.0.1:8005/mcp", "habilitado": 0}
+        self.obtener_mcps.side_effect = [MCPS + [cocina, nuevo], MCPS + [{**cocina, "habilitado": 0}, {**nuevo, "habilitado": 1}]]
+        plato = {"name": "mejor_plato", "description": "Consulta el mejor plato publicado", "inputSchema": {"type": "object", "properties": {}}}
+        dato = {"name": "consultar_dato", "description": "Consulta datos nuevos", "inputSchema": {"type": "object", "properties": {}}}
+        transporte, peticiones = self.transporte(intencion="consultar_capacidades", mensaje=mensaje)
+        with transporte, patch("funciones.jev_funciones.obtener_herramientas_mcp", AsyncMock(side_effect=[TOOLS, [plato], TOOLS, [dato]])) as catalogos:
+            primera = self.cliente.post("/evaluar", json={"mensaje": mensaje})
+            segunda = self.cliente.post("/evaluar", json={"mensaje": mensaje})
+        self.assertEqual(primera.status_code, 200, primera.text)
+        self.assertEqual(segunda.status_code, 200, segunda.text)
+        self.assertEqual(primera.json()["intencion"], "consultar_capacidades")
+        self.assertIsNone(primera.json()["mcp_recomendado"])
+        self.assertEqual(primera.json()["evaluaciones"], [])
+        self.assertEqual(primera.json()["capacidades"], [
+            {"nombre": "mcp_autos", "herramientas": TOOLS},
+            {"nombre": "mcp_cocina", "herramientas": [plato]},
+        ])
+        self.assertEqual(segunda.json()["capacidades"], [
+            {"nombre": "mcp_autos", "herramientas": TOOLS},
+            {"nombre": "mcp_nuevo", "herramientas": [dato]},
+        ])
+        self.assertEqual([llamada.args[0] for llamada in catalogos.call_args_list], [
+            MCPS[0]["url"], cocina["url"], MCPS[0]["url"], nuevo["url"],
+        ])
+        self.assertEqual(self.obtener_mcps.call_count, 2)
+        self.obtener_umbral.assert_not_called()
+        self.assertEqual(self.guardar_billing.call_count, 2)
+        self.assertNotIn("url", primera.json()["capacidades"][0])
+        self.assertEqual(len(peticiones), 2)  # Solo clasificación; no ejecución MCP.
+
+    def test_capacidades_sin_mcps_habilitados_devuelve_lista_vacia(self):
+        self.obtener_mcps.return_value = [{**MCPS[0], "habilitado": 0}]
+        mensaje = "¿Qué podés hacer?"
+        transporte, _ = self.transporte(intencion="consultar_capacidades", mensaje=mensaje)
+        with transporte, patch("funciones.jev_funciones.obtener_herramientas_mcp", AsyncMock()) as herramientas:
+            respuesta = self.cliente.post("/evaluar", json={"mensaje": mensaje})
+        self.assertEqual(respuesta.status_code, 200, respuesta.text)
+        self.assertEqual(respuesta.json()["intencion"], "consultar_capacidades")
+        self.assertEqual(respuesta.json()["capacidades"], [])
+        herramientas.assert_not_awaited()
+        self.obtener_umbral.assert_not_called()
+
+    def test_consulta_normal_no_devuelve_catalogos_de_capacidades(self):
+        transporte, _ = self.transporte()
+        with transporte:
+            respuesta = self.cliente.post("/evaluar", json={"mensaje": "¿Cuál es el mejor auto?"})
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertEqual(respuesta.json()["intencion"], "resolver_consulta")
+        self.assertEqual(respuesta.json()["capacidades"], [])
+
+    def test_intencion_desconocida_devuelve_error(self):
+        transporte, _ = self.transporte(intencion="desconocida")
+        with transporte, self.assertLogs("uvicorn.error.confianza.jev", level="ERROR"):
+            respuesta = self.cliente.post("/evaluar", json={"mensaje": "¿Cuál es el mejor auto?"})
+        self.assertEqual(respuesta.status_code, 502)
+
     def test_ambiguedad_entre_varios_mcps_devuelve_null_sin_error(self):
         from schemas.jev import RespuestaJev
         catalogos = [{"nombre": nombre, "herramientas": TOOLS[:1]} for nombre in ("autos", "cocina")]
-        answers = {"recomendacion": {"type": "choice", "choice": "ninguno"}}
+        answers = {"intencion": {"type": "choice", "choice": "resolver_consulta"}, "recomendacion": {"type": "choice", "choice": "ninguno"}}
         for indice in range(2):
             answers[f"cobertura_{indice}"] = {"type": "choice", "choice": "sirve"}
             answers[f"herramienta_{indice}_0"] = {"type": "choice", "choice": "aplicable", "confidence": 0.92}
@@ -160,7 +222,7 @@ class TestJev(unittest.TestCase):
         self.assertNotIn("tools/call", metodos_mcp)
         enviado = json.loads(peticiones[-1].content)
         self.assertEqual(len(enviado["state"]["mcps"][0]["herramientas"]), 2)
-        self.assertEqual(set(enviado["questions"]), {"recomendacion", "cobertura_0", "herramienta_0_0", "herramienta_0_1"})
+        self.assertEqual(set(enviado["questions"]), {"intencion", "recomendacion", "cobertura_0", "herramienta_0_0", "herramienta_0_1"})
         self.guardar_billing.assert_called_once_with(
             input_tokens=10, cached_tokens=0, cache_write_tokens=0, output_tokens=5,
             reasoning_tokens=0, total_tokens=15, costo_estimado_usd=0.00001,
@@ -321,7 +383,7 @@ class TestJev(unittest.TestCase):
                     self.assertIn("créditos insuficientes", respuesta.json()["detail"])
 
     def test_faltan_variables_o_url_invalida(self):
-        for entorno, registros, variable in [({}, MCPS, "JEV_KEY"), (ENTORNO, [], "habilitados"),
+        for entorno, registros, variable in [({}, MCPS, "JEV_KEY"),
                                   (ENTORNO, [{**MCPS[0], "url": "no-es-url"}], "URL")]:
             with self.subTest(variable=variable), patch.dict("os.environ", entorno, clear=True), \
                     patch("httpx.AsyncClient") as cliente, \
@@ -343,6 +405,7 @@ class TestFunciones(unittest.IsolatedAsyncioTestCase):
         from schemas.jev import RespuestaJev
         catalogos = [{"nombre": "prueba", "herramientas": [{"name": nombre} for nombre in ["aceptada", "baja", "descartada"]]}]
         respuesta = RespuestaJev(answers={
+            "intencion": {"type": "choice", "choice": "resolver_consulta"},
             "recomendacion": {"type": "choice", "choice": "mcp_0"},
             "cobertura_0": {"type": "choice", "choice": "sirve"},
             "herramienta_0_0": {"type": "choice", "choice": "aplicable", "confidence": 0.96},
@@ -358,6 +421,7 @@ class TestFunciones(unittest.IsolatedAsyncioTestCase):
         from schemas.jev import RespuestaJev
         for eleccion in ["mcp_99"]:
             respuesta = RespuestaJev.model_validate({"answers": {
+                "intencion": {"type": "choice", "choice": "resolver_consulta"},
                 "recomendacion": {"type": "choice", "choice": eleccion},
                 "cobertura_0": {"type": "choice", "choice": "sirve"},
                 "herramienta_0_0": {"type": "choice", "choice": "aplicable"},
@@ -368,6 +432,7 @@ class TestFunciones(unittest.IsolatedAsyncioTestCase):
     def test_recomendacion_ninguno_con_candidato_se_conserva_y_loguea(self):
         from schemas.jev import RespuestaJev
         respuesta = RespuestaJev(answers={
+            "intencion": {"type": "choice", "choice": "resolver_consulta"},
             "recomendacion": {"type": "choice", "choice": "ninguno"},
             "cobertura_0": {"type": "choice", "choice": "sirve"},
             "herramienta_0_0": {"type": "choice", "choice": "aplicable", "confidence": 0.96},
@@ -377,14 +442,19 @@ class TestFunciones(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(resultado.mcp_recomendado)
         self.assertEqual(resultado.evaluaciones[0].herramientas_aplicables, ["mejor_auto"])
 
-    async def test_catalogo_vacio_no_consulta_jev(self):
+    async def test_catalogo_vacio_solo_clasifica_intencion(self):
+        from schemas.jev import RespuestaJev
         with patch.dict("os.environ", ENTORNO, clear=True), \
                 patch("funciones.jev_funciones.obtener_mcps", return_value=MCPS), \
                 patch("funciones.jev_funciones.obtener_herramientas_mcp", AsyncMock(return_value=[])), \
                 patch("funciones.jev_funciones.consultar_jev", AsyncMock()) as consultar:
-            resultado = await jev_funciones.evaluar_mensaje(ConsultaJev(mensaje="Hola"))
+            await jev_funciones.evaluar_mensaje(ConsultaJev(mensaje="Hola"))
+        catalogos = consultar.call_args.args[1]
+        self.assertEqual(set(jev_funciones.construir_preguntas(catalogos)), {"intencion"})
+        resultado = jev_funciones.interpretar_respuesta(RespuestaJev(answers={
+            "intencion": {"type": "choice", "choice": "resolver_consulta"},
+        }), catalogos, 0.85)
         self.assertEqual(resultado.evaluaciones[0].estado, "no_sirve")
-        consultar.assert_not_called()
 
     async def test_timeout_jev(self):
         with patch.dict("os.environ", ENTORNO, clear=True), patch("httpx.AsyncClient") as constructor:
@@ -396,6 +466,7 @@ class TestFunciones(unittest.IsolatedAsyncioTestCase):
 
     async def test_url_y_modelo_configurados(self):
         datos = {"answers": {
+            "intencion": {"type": "choice", "choice": "resolver_consulta"},
             "recomendacion": {"type": "choice", "choice": "mcp_0"},
             "cobertura_0": {"type": "choice", "choice": "sirve"},
             "herramienta_0_0": {"type": "choice", "choice": "aplicable", "confidence": 0.92},

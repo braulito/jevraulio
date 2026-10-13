@@ -1,10 +1,11 @@
-"""Consultas de costos y configuración del umbral en SQLite."""
+"""Consultas de costos, umbral y catálogo MCP en SQLite."""
 
 import os
 import sqlite3
 from contextlib import closing
 from decimal import Decimal
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 DIRECTORIO_PAGINA = Path(__file__).resolve().parent
@@ -24,6 +25,61 @@ def conectar(cadena: str | None = None, *, solo_lectura: bool = True) -> sqlite3
     conexion = sqlite3.connect(archivo.resolve().as_uri() + f"?mode={modo}", uri=True, timeout=30)
     conexion.row_factory = sqlite3.Row
     return conexion
+
+
+def obtener_mcps(cadena: str | None = None) -> list[sqlite3.Row]:
+    with closing(conectar(cadena)) as conexion:
+        return conexion.execute("SELECT id, nombre, url, habilitado FROM mcps ORDER BY id").fetchall()
+
+
+def obtener_mcp(id_mcp: int, cadena: str | None = None) -> sqlite3.Row | None:
+    with closing(conectar(cadena)) as conexion:
+        return conexion.execute(
+            "SELECT id, nombre, url, habilitado FROM mcps WHERE id = ?", (id_mcp,)
+        ).fetchone()
+
+
+def eliminar_mcp(id_mcp: int, cadena: str | None = None) -> None:
+    with closing(conectar(cadena, solo_lectura=False)) as conexion:
+        with conexion:
+            cursor = conexion.execute("DELETE FROM mcps WHERE id = ?", (id_mcp,))
+            if cursor.rowcount != 1:
+                raise RuntimeError("No existe el MCP indicado.")
+
+
+def agregar_mcp(nombre: str, url: str, cadena: str | None = None) -> int:
+    """Agrega un servidor a la tabla existente, siempre deshabilitado."""
+    nombre, url = nombre.strip(), url.strip()
+    if not nombre:
+        raise ValueError("Ingresá el nombre del MCP.")
+    try:
+        partes = urlsplit(url)
+        if (partes.scheme not in {"http", "https"} or not partes.hostname
+                or any(caracter.isspace() or ord(caracter) < 32 for caracter in url)
+                or partes.username is not None or partes.password is not None):
+            raise ValueError
+        partes.port
+    except ValueError:
+        raise ValueError("Ingresá una URL HTTP o HTTPS válida, sin credenciales.") from None
+    with closing(conectar(cadena, solo_lectura=False)) as conexion:
+        with conexion:
+            cursor = conexion.execute(
+                "INSERT INTO mcps (nombre, url, habilitado) VALUES (?, ?, 0)", (nombre, url)
+            )
+            return cursor.lastrowid
+
+
+def guardar_estado_mcp(id_mcp: int, habilitado: int, cadena: str | None = None) -> None:
+    """Modifica solo el estado de un registro existente del catálogo."""
+    if id_mcp < 1 or habilitado not in (0, 1):
+        raise ValueError("Registro o estado inválido.")
+    with closing(conectar(cadena, solo_lectura=False)) as conexion:
+        with conexion:
+            cursor = conexion.execute(
+                "UPDATE mcps SET habilitado = ? WHERE id = ?", (habilitado, id_mcp)
+            )
+            if cursor.rowcount != 1:
+                raise RuntimeError("No existe el MCP indicado.")
 
 
 def obtener_umbral(cadena: str | None = None) -> Decimal:

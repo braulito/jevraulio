@@ -14,7 +14,7 @@ from pydantic import ValidationError
 from funciones.base_sqlite import obtener_mcp
 from funciones.chat_funciones import llamar_herramienta_mcp, obtener_herramientas_mcp
 from funciones import openai_funciones as llm
-from funciones.respuesta_jev_funciones import redactar_aclaracion, redactar_respuesta
+from funciones.respuesta_jev_funciones import redactar_aclaracion, redactar_capacidades, redactar_respuesta
 from schemas.chat import LlamadaHerramienta
 from schemas.chat_jev import ConsultaChatJev, RecomendacionJev, RespuestaChatJev
 
@@ -143,6 +143,12 @@ async def preguntar_seleccion(consulta: ConsultaChatJev, candidatos: list) -> st
 
 async def coordinar_chat_jev(consulta: ConsultaChatJev) -> RespuestaChatJev:
     recomendacion = await consultar_jeveador(consulta.mensaje, consulta.contexto)
+    if recomendacion.intencion == "consultar_capacidades":
+        texto = await redactar_capacidades(
+            consulta.mensaje, consulta.contexto,
+            [capacidad.model_dump() for capacidad in recomendacion.capacidades],
+        )
+        return RespuestaChatJev(estado="Ok", respuesta=texto, evaluaciones=[])
     comunes = {"evaluaciones": recomendacion.evaluaciones, "mcp_recomendado": recomendacion.mcp_recomendado}
     candidatos = [e for e in recomendacion.evaluaciones if e.estado != "no_sirve" and e.herramientas_aplicables]
     if not candidatos:

@@ -8,6 +8,26 @@
 .bienvenida p { color: #78818d; line-height: 1.6; }
 .mensaje { margin-bottom: 34px; font-size: 16px; line-height: 1.85; }
 .mensaje-texto { white-space: pre-wrap; overflow-wrap: anywhere; }
+.mensaje-markdown { white-space: normal; }
+.mensaje-markdown > :first-child { margin-top: 0; }
+.mensaje-markdown > :last-child { margin-bottom: 0; }
+.mensaje-markdown p { margin: 0 0 12px; }
+.mensaje-markdown ul, .mensaje-markdown ol { margin: 12px 0; padding-left: 26px; }
+.mensaje-markdown li { margin: 4px 0; }
+.mensaje-markdown li > p { margin: 0; }
+.mensaje-markdown h1, .mensaje-markdown h2, .mensaje-markdown h3, .mensaje-markdown h4, .mensaje-markdown h5, .mensaje-markdown h6 { margin: 20px 0 10px; line-height: 1.4; }
+.mensaje-markdown h1 { font-size: 1.5em; }
+.mensaje-markdown h2 { font-size: 1.3em; }
+.mensaje-markdown h3 { font-size: 1.15em; }
+.mensaje-markdown blockquote { margin: 14px 0; padding: 4px 16px; border-left: 3px solid #cbd5e1; color: #596574; }
+.mensaje-markdown code { padding: 2px 5px; border-radius: 4px; background: #f1f3f5; font-family: Consolas, monospace; font-size: 0.9em; }
+.mensaje-markdown pre { overflow-x: auto; padding: 14px; border-radius: 8px; background: #f1f3f5; white-space: pre; }
+.mensaje-markdown pre code { padding: 0; background: transparent; overflow-wrap: normal; }
+.mensaje-markdown a { color: #1765a5; text-decoration: underline; }
+.mensaje-markdown table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 14px 0; }
+.mensaje-markdown th, .mensaje-markdown td { padding: 7px 12px; border: 1px solid #dce1e8; text-align: left; }
+.mensaje-markdown th { background: #f4f5f7; }
+.mensaje-markdown img { max-width: 100%; height: auto; }
 .mensaje-usuario { display: flex; justify-content: flex-end; margin-bottom: 36px; }
 .mensaje-usuario .mensaje-texto { max-width: 80%; padding: 9px 18px; border-radius: 24px; background: #e8f3ff; line-height: 1.65; }
 .mensaje-asistente { padding: 0 2px; }

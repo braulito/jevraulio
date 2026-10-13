@@ -209,3 +209,15 @@ Conexión SQLite:
    Si /chat hace dos llamadas a OpenAI, se guardan dos filas.
    Para inicializar la tabla en una base nueva:
        .\api\Scripts\python.exe -c "from funciones.base_sqlite import crear_tabla_billing; crear_tabla_billing()"
+
+Consultas sobre capacidades en POST /chat/jev:
+  {"mensaje": "¿Qué datos me podés ofrecer?"}
+Jeveador devuelve intencion consultar_capacidades y los catálogos actuales de los
+MCP habilitados. La API valida ese contrato en schemas/chat_jev.py y lo coordina
+en funciones/chat_jev_funciones.py. funciones/respuesta_jev_funciones.py contiene
+redactar_capacidades(), que usa exclusivamente las descripciones y parámetros
+recibidos para responder en lenguaje natural, sin ejecutar herramientas.
+El router sigue en routers/chat_jev.py, registrado en main.py; no se agrega otra ruta.
+La respuesta pública conserva estado Ok, respuesta y herramientas [].
+Si no hay herramientas disponibles, responde con un mensaje fijo sin llamar a OpenAI.
+Al habilitar o agregar MCP, la próxima consulta usa sus catálogos sin cambiar código.

@@ -37,9 +37,26 @@ Cada estado puede ser sirve, sirve_parcialmente, no_sirve o falta_informacion.
 Si hay varios MCP pertinentes pero el mensaje y contexto no permiten elegir
 una intención, mcp_recomendado puede ser null conservando sus evaluaciones.
 La API usa esa combinación para pedir una aclaración natural al usuario.
-Si todos publican catálogos vacíos, devuelve no_sirve sin llamar a Jev.
-Si no hay MCP habilitados, devuelve 503. No ejecuta herramientas.
+Si todos publican catálogos vacíos o no hay MCP habilitados, se consulta a Jev solo
+para clasificar la intención. Una consulta concreta queda sin recomendación;
+una consulta de capacidades devuelve los catálogos vacíos o una lista vacía.
+No ejecuta herramientas.
 La API de la carpeta api no participa en esta evaluación.
+
+Consulta de capacidades (también POST /evaluar):
+  {"mensaje": "¿Qué datos me podés ofrecer?"}
+Jev clasifica intencion como consultar_capacidades o resolver_consulta en la misma
+solicitud de decisiones. La clasificación considera mensaje y contexto.
+Cuando intencion es consultar_capacidades, devuelve:
+  intencion: consultar_capacidades
+  mcp_recomendado: null
+  evaluaciones: []
+  capacidades: [{nombre, herramientas: [{name, description, inputSchema}]}]
+Los datos proceden del catálogo real de cada MCP habilitado, sin URLs ni contenido
+inventado. Se vuelven a consultar en cada petición. No se aplica el umbral ni se
+ejecutan herramientas para listar capacidades. El consumo de la clasificación
+se guarda en billing. La redacción de la respuesta al usuario por la API queda pendiente.
+Las consultas normales devuelven intencion resolver_consulta y capacidades [].
 
 Estructura:
   main.py: crea FastAPI y registra routers.

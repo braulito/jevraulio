@@ -39,9 +39,22 @@ class EvaluacionJev(BaseModel):
     requiere_aclaracion: bool = False
 
 
+class HerramientaMcp(BaseModel):
+    name: str
+    description: str = ""
+    inputSchema: dict = Field(default_factory=dict)
+
+
+class CapacidadMcp(BaseModel):
+    nombre: str
+    herramientas: list[HerramientaMcp] = Field(default_factory=list)
+
+
 class ComparacionJev(BaseModel):
+    intencion: Literal["resolver_consulta", "consultar_capacidades"] = "resolver_consulta"
     mcp_recomendado: str | None = None
     evaluaciones: list[EvaluacionJev] = Field(default_factory=list)
+    capacidades: list[CapacidadMcp] = Field(default_factory=list)
 
 
 class EleccionJev(BaseModel):

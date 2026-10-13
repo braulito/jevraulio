@@ -40,6 +40,18 @@ class RespuestaJevTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(json.loads(entrada[-1]["output"]), resultado)
         self.assertEqual(entrada[-1]["call_id"], entrada[-2]["call_id"])
 
+    async def test_clima_conserva_fecha_y_se_redacta_como_pronostico(self):
+        resultado = {"structuredContent": {"estado": "Ok", "respuesta": "2026-10-18 20:00, 13.2 °C"}}
+        await self.c["redactar_respuesta"]("que clima hace", [], "get_clima", {}, resultado)
+        llamada = self.llm.consultar_llm.call_args
+        entrada = llamada.args[1]
+        instrucciones = entrada[0]["content"]
+        self.assertIn("Incluí siempre la fecha", instrucciones)
+        self.assertIn("no una observación de la temperatura actual", instrucciones)
+        self.assertIn("GMT-3", instrucciones)
+        self.assertEqual(json.loads(entrada[-1]["output"]), resultado)
+        self.assertEqual(llamada.args[2], [])
+
     async def test_texto_vacio_no_se_presenta_como_respuesta(self):
         self.llm.extraer_texto.return_value = ""
         with self.assertRaises(HTTPException) as error:
@@ -60,6 +72,40 @@ class RespuestaJevTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.llm.consultar_llm.call_args.args[2], [])
         self.assertEqual(json.loads(entrada[1]["content"])["opciones"], opciones)
         self.assertIn("No menciones MCP", entrada[0]["content"])
+
+    async def test_capacidades_usa_descripciones_y_parametros_sin_habilitar_tools(self):
+        capacidades = [{"nombre": "mcp_nuevo", "herramientas": [{
+            "name": "consultar_datos", "description": "Consultar datos nuevos",
+            "inputSchema": {"type": "object", "properties": {"dato": {"type": "string"}}, "required": ["dato"]},
+        }]}]
+        self.llm.extraer_texto.return_value = "Puedo consultar datos nuevos si me indicás qué dato necesitás."
+        texto = await self.c["redactar_capacidades"]("¿Qué podés hacer?", [], capacidades)
+        self.assertEqual(texto, self.llm.extraer_texto.return_value)
+        llamada = self.llm.consultar_llm.call_args
+        self.assertEqual(llamada.args[2], [])
+        datos = json.loads(llamada.args[1][-1]["content"])
+        self.assertEqual(datos["capacidades_disponibles"], [{
+            "descripcion": "Consultar datos nuevos", "parametros": capacidades[0]["herramientas"][0]["inputSchema"],
+        }])
+        self.assertNotIn("mcp_nuevo", llamada.args[1][-1]["content"])
+        self.assertNotIn("consultar_datos", llamada.args[1][-1]["content"])
+
+    async def test_capacidades_vacias_no_consulta_llm(self):
+        for capacidades in [[], [{"nombre": "mcp_vacio", "herramientas": []}]]:
+            with self.subTest(capacidades=capacidades):
+                texto = await self.c["redactar_capacidades"]("¿Qué ofrecés?", [], capacidades)
+                self.assertEqual(texto, "En este momento no tengo herramientas disponibles para ofrecerte consultas.")
+        self.llm.consultar_llm.assert_not_awaited()
+
+    async def test_capacidades_rechaza_texto_vacio_o_llamadas(self):
+        capacidades = [{"nombre": "prueba", "herramientas": [{"name": "prueba", "description": "Consulta datos", "inputSchema": {}}]}]
+        for output, texto in [([], ""), ([{"type": "function_call", "name": "prueba"}], "Respuesta")]:
+            with self.subTest(output=output):
+                self.llm.consultar_llm.return_value.output = output
+                self.llm.extraer_texto.return_value = texto
+                with self.assertRaises(HTTPException) as error:
+                    await self.c["redactar_capacidades"]("¿Qué ofrecés?", [], capacidades)
+                self.assertEqual(error.exception.status_code, 502)
 
 
 if __name__ == "__main__":

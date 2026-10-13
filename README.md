@@ -1,6 +1,6 @@
 # Arquitectura de JEV
 
-Actualizada el 11 de octubre de 2026 a partir del código. Este documento describe la implementación actual, sus contratos y sus límites. Reemplaza la propuesta inicial de sesiones persistentes. No se inspeccionaron archivos `.env`, credenciales ni bases configuradas; las variables y tablas se documentan según el código.
+Actualizada el 12 de octubre de 2026 a partir del código. Este documento describe la implementación actual, sus contratos y sus límites. Reemplaza la propuesta inicial de sesiones persistentes. No se inspeccionaron archivos `.env`, credenciales ni bases configuradas; las variables y tablas se documentan según el código.
 
 ## Cómo se desarrolló
 
@@ -79,16 +79,17 @@ Mantené `MAX_CONTEXTO` igual en los tres archivos y reiniciá los servicios des
 
 | Componente | Tecnología | Dirección habitual de desarrollo | Responsabilidad |
 | --- | --- | --- | --- |
-| `pagina/` | Flask, Jinja, HTML/CSS/JavaScript | `http://127.0.0.1:8000` | Chat, contexto de pestaña y pantalla de costos. |
+| `pagina/` | Flask, Jinja, HTML/CSS/JavaScript | `http://127.0.0.1:8000` | Chat, contexto de pestaña, costos, edición del umbral y administración de MCPs. |
 | `api/` | FastAPI y Uvicorn | `http://127.0.0.1:8001` | Coordina Jeveador, OpenAI y ejecución MCP. |
 | `jeveador/` | FastAPI y Uvicorn | `http://127.0.0.1:8002` | Evalúa capacidades mediante Jev/OpenRouter; no ejecuta tools. |
 | `mcp_autos/` | FastMCP, Streamable HTTP | `http://127.0.0.1:8003/mcp` | Herramientas de ejemplo sobre autos. |
 | `mcp_cocina/` | FastMCP, Streamable HTTP | `http://127.0.0.1:8004/mcp` | Herramientas de ejemplo sobre platos. |
+| `mcp_clima/` | FastMCP, Streamable HTTP | `http://127.0.0.1:8005/mcp` | Última temperatura y probabilidad de precipitaciones del pronóstico horario para CABA, con fecha en GMT-3. |
 | SQLite | `sqlite3` de Python | Archivo indicado por `CADENA` | Catálogo, costos y descripciones de errores. |
 | OpenAI | Responses API por HTTPX | Servicio externo | Prepara argumentos, pide aclaraciones y redacta respuestas. |
 | Jev/OpenRouter | API de decisiones por HTTPX | Servicio externo configurado | Decide cobertura, aplicabilidad y recomendación. |
 
-Los puertos de API y Jeveador vienen de sus comandos de arranque. El navegador consulta Flask; Flask usa la URL completa de `API_URL`. La página lee SQLite directamente para mostrar costos. No existe un servidor SQL Server: `sqlserver/` es una carpeta. No hay backend Node.js.
+Los puertos de API y Jeveador vienen de sus comandos de arranque. El navegador consulta Flask; Flask usa la URL completa de `API_URL`. La página consulta SQLite directamente para mostrar costos y administrar el umbral y el catálogo MCP. No existe un servidor SQL Server: `sqlserver/` es una carpeta. No hay backend Node.js.
 
 ```mermaid
 flowchart LR
@@ -102,7 +103,7 @@ flowchart LR
     A --> E[MCP seleccionado · ejecución]
     A --> D[(SQLite)]
     J --> D
-    P -->|Solo lectura de costos| D
+    P -->|Lectura de costos; edición de umbral y MCPs| D
 ```
 
 ## Rutas
@@ -112,6 +113,10 @@ flowchart LR
 | Página | `GET /`, `GET /index.html` | Interfaz del chat. |
 | Página | `POST /chat` | Valida entrada, consulta `API_URL` y devuelve texto. |
 | Página | `GET /costos`, `GET /costos.html` | Consumos, filtros y paginación. |
+| Página | `GET/POST /umbral`, `GET/POST /umbral.html` | Consultar y guardar el umbral de confianza como porcentaje. |
+| Página | `GET/POST /mcps`, `GET/POST /mcps.html` | Listar MCPs y cambiar su habilitación. |
+| Página | `POST /mcps/agregar` | Agregar nombre y URL; siempre deshabilitado. |
+| Página | `GET/POST /mcps/<id_mcp>/borrar` | Mostrar confirmación y eliminar el registro mediante POST. |
 | API | `GET /mejor_auto` | Ejecuta directamente la herramienta MCP, sin LLM. |
 | API | `POST /es_mejor_auto` | Ejecuta directamente con el parámetro `auto`, sin LLM. |
 | API | `POST /chat` | Chat original con OpenAI contra `MCP_AUTOS_URL`. |
@@ -126,7 +131,7 @@ API y Jeveador tienen Swagger en `/docs`. Las rutas de negocio usan JSON; MCP us
 2. Flask valida y reenvía a la API usando `cliente_api.py`. `API_URL` debe incluir `/chat/jev`: la página no agrega la ruta.
 3. La API manda `mensaje` y `contexto` a `POST /evaluar` de Jeveador.
 4. Jeveador lee `mcps` y consulta `list_tools()` de todos los servidores habilitados, con paginación.
-5. Envía a Jev una solicitud con mensaje, contexto, catálogos y preguntas de cobertura/aplicabilidad/recomendación. Las reglas se envían una sola vez en `state.reglas`.
+5. Envía a Jev una solicitud con mensaje, contexto, catálogos y preguntas de intención/cobertura/aplicabilidad/recomendación. Las reglas se envían una sola vez en `state.reglas`.
 6. Jeveador registra el consumo y valida las decisiones. Devuelve `mcp_recomendado` y una evaluación por MCP.
 7. La API determina si usar la recomendación, responder sin coincidencias o pedir aclaración.
 8. Para ejecutar, busca la URL del MCP recomendado en SQLite y exige que esté habilitado. Las URLs no proceden de la LLM.
@@ -134,7 +139,9 @@ API y Jeveador tienen Swagger en `/docs`. Las rutas de negocio usan JSON; MCP us
 10. OpenAI prepara una llamada o pide datos. La API verifica nombre y argumentos mediante JSON Schema.
 11. Ejecuta una herramienta por MCP y conserva el resultado completo.
 12. Otra llamada OpenAI, sin herramientas habilitadas, redacta una respuesta natural con mensaje, contexto y resultado real.
-13. La API devuelve el contrato del chat; Flask extrae `respuesta` y el navegador la muestra como texto.
+13. La API devuelve el contrato del chat; Flask extrae `respuesta` y el navegador la muestra con Markdown sanitizado.
+
+Para preguntas como «¿Qué podés hacer?» existe otra rama: Jev devuelve `intencion: "consultar_capacidades"` y los catálogos de los MCP habilitados. OpenAI redacta una explicación de esas capacidades sin ejecutar herramientas ni obtener sus resultados. Para un pedido concreto, la intención es `resolver_consulta` y se aplica el flujo de selección y ejecución anterior.
 
 ```mermaid
 sequenceDiagram
@@ -259,7 +266,7 @@ Respuesta pública de `/chat` y `/chat/jev`:
 
 Aclaraciones y respuestas sin coincidencias conservan `estado: "Ok"` y `herramientas: []`. `Ok` indica que se produjo una respuesta, no que necesariamente se ejecutó una operación. Los estados internos y el resultado MCP completo no se exponen en este contrato. Un `isError` del protocolo se comunica en el texto.
 
-Jeveador devuelve `mcp_recomendado` (nombre o `null`) y `evaluaciones`. Cada evaluación tiene `estado`, `mcp_evaluado`, `motivo`, `herramientas_aplicables` y `requiere_aclaracion`. Los estados son `sirve`, `sirve_parcialmente`, `no_sirve` y `falta_informacion`.
+Jeveador devuelve `intencion`, `mcp_recomendado` (nombre o `null`), `evaluaciones` y `capacidades`. Cada evaluación tiene `estado`, `mcp_evaluado`, `motivo`, `herramientas_aplicables` y `requiere_aclaracion`. Los estados son `sirve`, `sirve_parcialmente`, `no_sirve` y `falta_informacion`. En una consulta de capacidades devuelve los catálogos, sin recomendar una ejecución ni aplicar el umbral de herramientas.
 
 Una recomendación `null` puede indicar ausencia de candidatos, ambigüedad o una recomendación descartada por inconsistencia o confianza insuficiente; la API distingue mediante las evaluaciones. Jeveador registra una recomendación `null` con un único candidato pertinente como inconsistente, pero la conserva sin producir un 502 ni ejecutar automáticamente.
 
@@ -299,7 +306,7 @@ Las rutas directas `/mejor_auto` y `/es_mejor_auto` crean sesiones MCP y llaman 
 
 Flask entrega el límite a JavaScript mediante `data-max-contexto`. Página, API y Jeveador validan el mismo límite. La API usa el contexto para evaluación, preparación y redacción.
 
-No hay usuarios, sesiones persistidas, identificadores de conversación, MCP activo guardado ni tareas pendientes durables. Cada turno de `/chat/jev` vuelve a consultar Jeveador.
+No hay usuarios, conversaciones persistidas, identificadores de conversación, MCP activo guardado ni tareas pendientes durables. Cada turno de `/chat/jev` vuelve a consultar Jeveador. Flask sí usa una cookie de sesión firmada para los formularios de administración y sus mensajes de confirmación; no guarda allí el historial del chat.
 
 ## Servidores MCP
 
@@ -309,18 +316,53 @@ Las descripciones y esquemas vienen de docstrings/anotaciones de FastMCP, no de 
 | --- | --- | --- |
 | Autos | `mejor_auto()` | `Fiat Pulse` |
 | Autos | `es_mejor_auto(auto)` | `Si` para Fiat Pulse; `No` para otros nombres. |
-| Cocina | `mejor_plato()` | `Milanesas` |
-| Cocina | `es_mejor_plato(plato)` | `Si` para milanesas; `No` para otros nombres. |
+| Cocina | `es_mejor_plato(plato)` | `Si` para milanesa/milanesas; `No` para otros nombres. |
+| Cocina | `compara_platos(plato_a, plato_b)` | Prefiere milanesas cuando es un candidato; empate para nombres iguales; sin criterio para elegir entre otros dos platos distintos. |
+| Clima | `get_clima()` | Fecha/hora GMT-3 y última temperatura horaria pronosticada para CABA en °C. |
+| Clima | `get_precipitaciones()` | Fecha/hora GMT-3 y última probabilidad horaria de lluvias pronosticada para CABA, de 0 a 100%. |
 
-Son respuestas programadas, no rankings históricos ni búsquedas externas. Las comparaciones normalizan espacios exteriores y mayúsculas/minúsculas.
+Autos y Cocina usan respuestas programadas, no rankings históricos. Las comparaciones normalizan espacios exteriores y mayúsculas/minúsculas. Clima consulta Open-Meteo y usa el último registro del pronóstico; ese dato puede ser futuro y no debe presentarse como una observación actual.
 
-Jeveador lee todos los registros habilitados en cada petición y descubre catálogos secuencialmente. Si uno falla, aborta: no presenta una comparación incompleta. Si todos los catálogos están vacíos, devuelve evaluaciones negativas sin llamar al proveedor.
+`mejor_plato()` fue retirado del catálogo de Cocina para reducir su solapamiento con `es_mejor_plato`. Las descripciones deben distinguir verificación de un plato y comparación de dos platos, y coincidir con el código. Una respuesta negativa de la herramienta no la vuelve inaplicable. Las pruebas manuales mostraron que el solapamiento y la formulación pueden influir en Jev; no garantizan una selección estable para todo pedido ni que una confianza alta implique una decisión correcta.
+
+Jeveador lee todos los registros habilitados en cada petición y descubre catálogos secuencialmente. Si uno falla, aborta: no presenta una comparación incompleta. También envía a Jev el caso sin servidores habilitados o con catálogos vacíos para identificar la intención. Si el pedido es una consulta concreta y no hay herramientas, devuelve evaluaciones negativas; si es una consulta de capacidades, devuelve el catálogo vacío y la API informa que no tiene herramientas disponibles sin llamar a OpenAI para redactarlo.
 
 La API vuelve a descubrir antes de ejecutar. No hay caché local de catálogos ni conexiones MCP persistentes. Jeveador agrega `/mcp` a direcciones sin ruta; el cliente MCP de la API usa literalmente la URL recibida. Conviene registrar la URL completa en `mcps` para que ambos funcionen.
 
+## Páginas y administración
+
+La navegación compartida ofrece **Chat**, **Costos**, **Umbral** y **MCPs**, con la marca **JEVraulio** (`raulio` en cursiva sin negrita). Los títulos de pestaña son `JEVraulio - Chat`, `JEVraulio - Costos`, `JEVraulio - Umbral` y `JEVraulio - MCPs`.
+
+### Chat
+
+Muestra las preguntas en burbujas a la derecha y las respuestas a la izquierda. El formulario permanece al pie, impide envíos duplicados mientras espera y permite Enter para enviar o Shift + Enter para una nueva línea. Las respuestas admiten Markdown mediante Marked y DOMPurify locales, con sanitización antes de insertarlas; también hay un botón para copiar. Si falla la comunicación, muestra «Ocurrió un error.».
+
+### Costos
+
+La tabla de `billing` tiene filas compactas, fechas en GMT-3 y costos USD con ocho decimales. `PAGINA_SIZE` controla el número de registros y `pagina` la página seleccionada. Los controles de consumos muestran u ocultan tanto las filas como el resumen de cada grupo y conservan la selección al paginar o actualizar.
+
+Los resúmenes se muestran en dos líneas, sin total combinado:
+
+- **Costo OpenAI - Total tokens OAI:** registros que no tienen `metodo = 'JEV'`, incluidos métodos nulos.
+- **Costo JEV - Total tokens JEV:** registros con `metodo = 'JEV'`.
+
+Cada resumen suma todas las filas de su grupo, no solo la página visible. Cambiar el filtro vuelve a la primera página; los límites de paginación se ajustan a los registros filtrados.
+
+### Umbral
+
+Lee `config_umbral.id = 1`. Muestra el valor multiplicado por 100 y lo divide por 100 al guardar: `0.85` se muestra como `85`, y guardar `85` conserva `0.85` en SQLite. Acepta porcentajes entre 0 y 100, incluidos decimales. Solo actualiza el registro existente; no crea la tabla ni una fila faltante. Jeveador lee el umbral en cada evaluación, por lo que cambiarlo no requiere reiniciar Jeveador.
+
+### MCPs
+
+Lista ID, nombre, URL y habilitación. El interruptor ON/OFF guarda `habilitado = 1` o `0` para esa fila. El formulario **Agregar MCP** pide nombre y URL HTTP/HTTPS válida, rechaza nombres duplicados y guarda siempre `habilitado = 0`; el usuario lo habilita manualmente cuando lo necesita. El valor inicial `DEFAULT 1` del esquema no se usa para estas altas: el INSERT fija explícitamente el estado en cero.
+
+**Borrar** abre una página de confirmación con opción de cancelar. El borrado ocurre únicamente con POST y elimina solo el registro elegido del catálogo; no detiene el proceso del servidor MCP ni borra el historial de costos. Los formularios que escriben usan tokens CSRF y redirigen tras guardar para evitar repetir la operación al recargar.
+
+Jeveador vuelve a consultar los servidores habilitados en cada pedido. Agregar, habilitar, deshabilitar o borrar un registro se refleja en las siguientes consultas, sin reiniciar API ni Jeveador. Registrar una URL no inicia ni verifica el servidor: debe estar funcionando antes de habilitarlo. La página usa las tablas existentes de `CADENA` y no las inicializa.
+
 ## SQLite
 
-Esquema definido en código, no inspección de la base real. API y Jeveador usan consultas parametrizadas y conexiones con commit, rollback y cierre; la página abre el archivo en modo de solo lectura. `sqlite3` viene con Python.
+Esquema definido en código, no inspección de la base real. API y Jeveador usan consultas parametrizadas y conexiones con commit, rollback y cierre. La página usa `mode=ro` para leer y `mode=rw` para guardar el umbral o administrar MCPs; ambos requieren un archivo existente. `sqlite3` viene con Python.
 
 ### Tabla `mcps`
 
@@ -331,7 +373,16 @@ Esquema definido en código, no inspección de la base real. API y Jeveador usan
 | `url` | `TEXT NOT NULL` |
 | `habilitado` | `INTEGER NOT NULL DEFAULT 1`, admite 0 o 1 |
 
-Jeveador tiene una función explícita que crea la tabla e inserta Autos/Cocina solamente si no existe. La API busca por nombre y exige que esté habilitado.
+Jeveador tiene una función explícita que crea la tabla e inserta Autos, Cocina y Clima habilitados solamente si no existe. Si ya existe, no repuebla ni reemplaza el catálogo. La página agrega servidores deshabilitados; la API busca por nombre y exige que esté habilitado.
+
+### Tabla `config_umbral`
+
+| Campo | Tipo/restricción |
+| --- | --- |
+| `id` | `INTEGER PRIMARY KEY CHECK (id = 1)` |
+| `valor` | `REAL NOT NULL` |
+
+La función de inicialización de Jeveador crea la tabla y el registro `id = 1`, `valor = 0.85` solo si la tabla no existe. La página consulta y actualiza ese registro. Si Jeveador no logra leerlo, usa `UMBRAL_DEFECTO`; la pantalla de Umbral informa el fallo en lugar de inventar un valor.
 
 ### Tabla `errores`
 
@@ -392,7 +443,7 @@ Los tres servicios cargan su configuración automáticamente con `python-dotenv`
 | Servicio | Variable | Uso/default |
 | --- | --- | --- |
 | Página | `API_URL` | Endpoint completo de chat. |
-| Página | `CADENA` | Archivo de costos. |
+| Página | `CADENA` | Archivo SQLite con `billing`, `config_umbral` y `mcps`. |
 | Página | `PAGINA_SIZE` | 50 si falta o es inválido/no positivo. |
 | Los tres | `MAX_CONTEXTO` | Entero positivo; 20 si falta. Debe coincidir. |
 | API | `API_KEY` | Credencial OpenAI para chats con LLM. |
@@ -405,6 +456,7 @@ Los tres servicios cargan su configuración automáticamente con `python-dotenv`
 | Jeveador | `JEV_URL` | Endpoint externo de decisiones, no API local. |
 | Jeveador | `JEV_MODELO` | Modelo del proveedor de decisiones. |
 | Jeveador | `CADENA` | Catálogo y billing. |
+| Jeveador | `UMBRAL_DEFECTO` | Respaldo si falla `config_umbral`; 0.5 si no se convierte a decimal. |
 
 `JEV_URL` tiene significados distintos en API y Jeveador. Cambiar configuración requiere reiniciar cada proceso; cambiar `MAX_CONTEXTO` requiere recargar la página. Las credenciales se leen del entorno y no se mandan al navegador.
 
@@ -444,9 +496,9 @@ Dependencias por componente: `api/reqs.txt`, `jeveador/reqs.txt` y los `requirem
 | `jeveador/funciones/mcp_funciones.py` | URLs y descubrimiento MCP. |
 | `jeveador/funciones/bases_sqlite.py`, `billing.py` | Catálogo y consumo del proveedor. |
 | `jeveador/funciones/entorno.py`, `contexto_config.py` | Configuración. |
-| `pagina/app.py`, `cliente_api.py`, `bases.py` | Flask, cliente API y lectura de costos. |
+| `pagina/app.py`, `cliente_api.py`, `bases.py` | Flask, cliente API, lectura de costos y edición de umbral/catálogo MCP. |
 | `pagina/templates/`, `static/` | Interfaz y contexto de navegador. |
-| `mcp_autos/server.py`, `mcp_cocina/server.py` | Publicación de herramientas. |
+| `mcp_autos/server.py`, `mcp_cocina/server.py`, `mcp_clima/server.py` | Publicación de herramientas. |
 
 ## Límites y observabilidad
 
@@ -464,12 +516,13 @@ Los 30 segundos del proveedor no limitan todo `/evaluar`: los descubrimientos MC
 
 FastAPI usa 422 por entrada inválida, 503 por configuración/catálogo, 502 por servicios/respuestas y 504 por timeout. Un fallo de billing también puede causar 500. Flask valida entradas con 400 y traduce fallos del cliente API a 502.
 
-`api/logging.json` conserva formatos y colores de Uvicorn para arranque/acceso. Los logs explícitos incluyen nivel, fecha/hora, archivo y línea. Los INFO salientes de HTTPX/HTTPcore/MCP se filtran. Jeveador no imprime el JSON completo de decisiones ni probabilidades: registra una línea INFO por herramienta con MCP, nombre, decisión (`aplicable` o `no_aplicable`) y `confidence` (o «no informada»). El log conserva la decisión original; la aceptación exige además superar el umbral configurado. La confianza no se guarda en SQLite. Flask usa su logging propio.
+`api/logging.json` conserva formatos y colores de Uvicorn para arranque/acceso. Los logs explícitos incluyen nivel, fecha/hora, archivo y línea. Los INFO salientes de HTTPX/HTTPcore/MCP se filtran. Jeveador registra una línea INFO por herramienta con MCP, nombre, decisión (`aplicable` o `no_aplicable`), `confidence` (o «no informada») y `probabilities` (o «no informadas»). No imprime el umbral en esa línea. Se retiraron las trazas temporales `JEV SOLICITUD` y `CHAT JEV` de selección/ejecución/resultados. El log conserva la decisión original; la aceptación exige además superar el umbral configurado. La confianza no se guarda en SQLite. Flask usa su logging propio.
 
 En `api/funciones/billing.py`, el guardado está activo y no se imprime el diccionario de consumo. El resumen `logger.info` está comentado. El try/except de persistencia registra el traceback y vuelve a lanzar la excepción.
 
 ## Límites de la implementación y pendientes
 
+- Revisar la incorporación de una herramienta de presión atmosférica y su posible solapamiento con `get_clima`. Delimitar las descripciones: temperatura en °C, frío/calor y abrigo para `get_clima`; presión atmosférica en hPa para la nueva herramienta, indicando si mide presión en superficie o a nivel del mar. Mantener temperatura como interpretación predeterminada de «qué clima hace». Verificar la selección de Jev con preguntas específicas, generales y combinadas. El flujo actual ejecuta una sola herramienta por pedido: para «temperatura y presión», decidir entre una herramienta que devuelva ambos datos o ampliar el flujo para ejecutar varias. Pendiente de retomar con el usuario; no implementar aún.
 - Crear un método en la API para recibir y guardar en una tabla los errores ocurridos. Integrar su llamada cada vez que se produzca un error en los componentes del sistema, incluido Jeveador. Debe conservar el componente de origen, fecha/hora, tipo de error, mensaje y traceback, sin credenciales ni secretos. Este registro de eventos está pendiente y es distinto del catálogo de descripciones de errores existente.
 - Persistir también los casos en los que el sistema no puede resolver el pedido por falta de herramientas aplicables o porque ninguna supera el umbral, incluida una recomendación de Jev sin herramientas aceptables. Su clasificación queda pendiente. Ya se registran en consola y se normalizan como resultados válidos (200 OK, sin MCP recomendado), con el mensaje de la API «No tengo las herramientas necesarias para responder tu pregunta». Queda pendiente integrarlos con el método y la tabla central de registro, conservando las inconsistencias para analizarlas.
 - El historial no persiste tras recargar. No hay identidad de usuario, permisos por herramienta ni gestión de sesiones en el servidor.
@@ -487,6 +540,8 @@ Se revisaron rutas, funciones, esquemas, MCP, cliente de página, JavaScript, te
 
 Las pruebas focalizadas validan selección recomendada, ambigüedad y continuación natural, contexto, esquemas, MCP deshabilitado, redacción y contrato público. Las de Jeveador simulan HTTP y sustituyen la carga de `.env`; las de página omiten esa carga.
 
-Las últimas ejecuciones focalizadas de API completaron 33 pruebas y las de Jeveador 32, sin llamadas reales a proveedores. Incluyen una regresión de consulta general con comparación anterior en el contexto y la ausencia del log JSON de decisiones. Estas pruebas verifican coordinación con respuestas simuladas, no garantizan las elecciones o el texto exacto de una LLM en producción.
+Las verificaciones de las páginas Umbral y MCPs se realizaron con bases temporales ficticias: conversión porcentaje/decimal, habilitación, alta siempre deshabilitada, nombres duplicados, validación de URL, borrado confirmado mediante POST, tokens CSRF, registros ausentes y errores de acceso. No modificaron la base real. La revisión del README del 12 de octubre cotejó estas funciones y las rutas con el código; no ejecutó consultas reales a proveedores.
+
+Una revisión anterior completó 33 pruebas focalizadas de API y 32 de Jeveador, sin llamadas reales a proveedores. Incluyó una regresión de consulta general con comparación anterior en el contexto y la ausencia del log JSON de decisiones. Son resultados de esa ejecución, no un recuento actualizado de toda la suite. Estas pruebas verifican coordinación con respuestas simuladas, no garantizan las elecciones o el texto exacto de una LLM en producción.
 
 La revisión completa inicial de API detectó dos pruebas que esperan el resumen `logging.info` de billing, actualmente comentado. Esa divergencia de consola no demuestra un fallo del guardado y se deja documentada, sin modificar billing. La integración real y las pruebas que carguen configuración local deben ejecutarse fuera de esta revisión.

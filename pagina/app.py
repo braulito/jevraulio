@@ -9,7 +9,7 @@ from secrets import compare_digest, token_bytes, token_urlsafe
 
 from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 
-from bases import guardar_umbral, obtener_costos, obtener_umbral
+from bases import agregar_mcp, eliminar_mcp, guardar_estado_mcp, guardar_umbral, obtener_costos, obtener_mcp, obtener_mcps, obtener_umbral
 from cliente_api import consultar_chat
 
 
@@ -148,6 +148,112 @@ def crear_app(*, cargar_entorno: bool = True) -> Flask:
                 error = "No se pudo consultar el umbral. Revisá la base y el registro de config_umbral."
                 codigo = 503
         return render_template("umbral.html", porcentaje=porcentaje, error=error), codigo
+
+    @app.route("/mcps", methods=["GET", "POST"])
+    @app.route("/mcps.html", methods=["GET", "POST"])
+    def mcps():
+        if "csrf_mcps" not in session:
+            session["csrf_mcps"] = token_urlsafe(32)
+        error = None
+        codigo = 200
+        if request.method == "POST":
+            if not compare_digest(request.form.get("csrf_token", "").encode("utf-8"), session["csrf_mcps"].encode("utf-8")):
+                error = "El formulario venció. Recargá la página e intentá nuevamente."
+                codigo = 400
+            else:
+                try:
+                    id_mcp = int(request.form.get("id_mcp", ""))
+                    estado = request.form.get("habilitado", "")
+                    if id_mcp < 1 or estado not in ("0", "1"):
+                        raise ValueError
+                except ValueError:
+                    error = "El registro o el estado solicitado no es válido."
+                    codigo = 400
+                else:
+                    try:
+                        guardar_estado_mcp(id_mcp, int(estado), app.config["CADENA"])
+                    except RuntimeError:
+                        error = "El MCP indicado ya no existe en el catálogo."
+                        codigo = 404
+                    except (ValueError, OSError, sqlite3.Error):
+                        error = "No se pudo actualizar el MCP. Revisá el acceso a la base."
+                        codigo = 503
+                    else:
+                        flash("MCP habilitado correctamente." if estado == "1" else "MCP deshabilitado correctamente.", "exito")
+                        return redirect(url_for("mcps"))
+        try:
+            registros = obtener_mcps(app.config["CADENA"])
+        except (ValueError, OSError, sqlite3.Error):
+            registros = None
+            error = "No se pudo consultar el catálogo. Revisá la base y la existencia de la tabla mcps."
+            codigo = 503
+        return render_template("mcps.html", registros=registros, error=error), codigo
+
+    @app.post("/mcps/agregar")
+    def crear_mcp():
+        nombre = request.form.get("nombre", "")
+        url = request.form.get("url", "")
+        token = session.get("csrf_mcps", "")
+        if not token or not compare_digest(request.form.get("csrf_token", "").encode("utf-8"), token.encode("utf-8")):
+            error = "El formulario venció. Recargá la página e intentá nuevamente."
+            codigo = 400
+        else:
+            try:
+                agregar_mcp(nombre, url, app.config["CADENA"])
+            except ValueError as fallo:
+                error = str(fallo)
+                codigo = 400
+            except sqlite3.IntegrityError:
+                error = "Ya existe un MCP con ese nombre."
+                codigo = 409
+            except (OSError, sqlite3.Error):
+                error = "No se pudo agregar el MCP. Revisá el acceso a la base y la tabla mcps."
+                codigo = 503
+            else:
+                flash("MCP agregado como deshabilitado. Podés habilitarlo desde la tabla cuando lo necesites.", "exito")
+                return redirect(url_for("mcps"))
+        try:
+            registros = obtener_mcps(app.config["CADENA"])
+        except (ValueError, OSError, sqlite3.Error):
+            registros = None
+        return render_template(
+            "mcps.html", registros=registros, error=error,
+            nuevo_nombre=nombre, nueva_url=url,
+        ), codigo
+
+    @app.route("/mcps/<int:id_mcp>/borrar", methods=["GET", "POST"])
+    def borrar_mcp(id_mcp):
+        if "csrf_mcps" not in session:
+            session["csrf_mcps"] = token_urlsafe(32)
+        error = None
+        codigo = 200
+        registro = None
+        if request.method == "POST":
+            if not compare_digest(request.form.get("csrf_token", "").encode("utf-8"), session["csrf_mcps"].encode("utf-8")):
+                error = "El formulario venció. Recargá la página e intentá nuevamente."
+                codigo = 400
+            else:
+                try:
+                    eliminar_mcp(id_mcp, app.config["CADENA"])
+                except RuntimeError:
+                    error = "El MCP indicado ya no existe en el catálogo."
+                    codigo = 404
+                except (ValueError, OSError, sqlite3.Error):
+                    error = "No se pudo borrar el MCP. Revisá el acceso a la base."
+                    codigo = 503
+                else:
+                    flash("MCP eliminado del catálogo.", "exito")
+                    return redirect(url_for("mcps"))
+        try:
+            registro = obtener_mcp(id_mcp, app.config["CADENA"])
+            if registro is None and error is None:
+                error = "El MCP indicado ya no existe en el catálogo."
+                codigo = 404
+        except (ValueError, OSError, sqlite3.Error):
+            if error is None:
+                error = "No se pudo consultar el MCP. Revisá el acceso a la base."
+                codigo = 503
+        return render_template("mcps_borrar.html", registro=registro, error=error), codigo
 
     return app
 

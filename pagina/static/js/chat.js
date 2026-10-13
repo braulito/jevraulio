@@ -33,7 +33,7 @@ function agregarCopiar(mensaje, texto) {
     boton.className = "copiar-respuesta";
     boton.setAttribute("aria-label", "Copiar respuesta");
     boton.title = "Copiar respuesta";
-    // Ícono fijo; los textos de la API siempre se insertan con textContent.
+    // Ícono fijo; las respuestas se muestran con Markdown sanitizado.
     boton.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="3"/><path d="M16 8V5a3 3 0 0 0-3-3H5a3 3 0 0 0-3 3v8a3 3 0 0 0 3 3h3"/></svg>';
     boton.addEventListener("click", async () => {
         try {
@@ -84,7 +84,7 @@ formulario.addEventListener("submit", async (evento) => {
     } catch {
         texto = "Ocurrió un error.";
     } finally {
-        pendiente.contenido.textContent = texto;
+        mostrarRespuestaMarkdown(pendiente.contenido, texto);
         pendiente.mensaje.classList.remove("mensaje-pendiente");
         agregarCopiar(pendiente.mensaje, texto);
         enviar.disabled = false;

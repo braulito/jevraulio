@@ -138,6 +138,19 @@ def obtener_mcps() -> list[dict]:
         return [dict(fila) for fila in filas]
 
 
+def insertar_mcp_clima_temporal() -> None:
+    """Insertar MCP Clima en mcps si aún no está registrado. Uso temporal."""
+    with conexion_sqlite() as conexion:
+        conexion.execute(
+            """
+            INSERT INTO mcps (nombre, url, habilitado)
+            VALUES (?, ?, ?)
+            ON CONFLICT(nombre) DO NOTHING
+            """,
+            ("mcp_clima", "http://localhost:8005/mcp", 1),
+        )
+
+
 def crear_tabla_mcps() -> None:
     """Crear el catálogo y sus datos iniciales solo si la tabla no existe."""
     with conexion_sqlite() as conexion:
@@ -162,5 +175,6 @@ def crear_tabla_mcps() -> None:
             [
                 ("mcp_autos", "http://localhost:8003/mcp", 1),
                 ("mcp_cocina", "http://localhost:8004/mcp", 1),
+                ("mcp_clima", "http://localhost:8005/mcp", 1),
             ],
         )

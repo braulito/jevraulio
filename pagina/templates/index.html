@@ -28,5 +28,8 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='vendor/marked.umd.js') }}" defer></script>
+<script src="{{ url_for('static', filename='vendor/purify.min.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/markdown.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/chat.js') }}" defer></script>
 {% endblock %}

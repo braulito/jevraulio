@@ -70,7 +70,25 @@ MOTIVOS = {
 
 
 def construir_preguntas(catalogos: list[dict]) -> dict:
-    preguntas = {}
+    preguntas = {
+        "intencion": {
+            "type": "choice",
+            "instructions": (
+                "Aplicá state.reglas. Identificá la intención del mensaje actual. "
+                "Preguntas como '¿Qué datos me podés ofrecer?', '¿Qué podés hacer?' o "
+                "'¿En qué me podés ayudar?' piden conocer las capacidades del sistema. "
+                "No las confundas con un pedido de datos o de una operación concreta, "
+                "por ejemplo '¿Qué datos tiene este auto?' o '¿Cuál es el mejor plato?'. "
+                "Usá el contexto para entender referencias; el pedido explícito actual tiene prioridad."
+            ),
+            "criteria": {
+                "consultar_capacidades": "El usuario quiere saber qué información, consultas u operaciones ofrece este sistema.",
+                "resolver_consulta": "El usuario pide responder una pregunta concreta o realizar una operación, no describir las capacidades del sistema.",
+            },
+        },
+    }
+    if not any(catalogo["herramientas"] for catalogo in catalogos):
+        return preguntas
     candidatos = {"ninguno": "Sin herramientas pertinentes o intención ambigua entre varios MCP."}
     for indice, catalogo in enumerate(catalogos):
         nombre = catalogo["nombre"]
@@ -113,7 +131,21 @@ def construir_solicitud(consulta: ConsultaJev, catalogos: list[dict], modelo: st
     }
 
 
-def interpretar_respuesta(respuesta: RespuestaJev, catalogos: list[dict], umbral: float) -> ComparacionJev:
+def interpretar_respuesta(respuesta: RespuestaJev, catalogos: list[dict], umbral: float | None = None) -> ComparacionJev:
+    intencion = respuesta.answers["intencion"].choice
+    if intencion == "consultar_capacidades":
+        logger.info("Consulta de capacidades: se devuelven los catálogos actuales de los MCP habilitados, sin ejecutar herramientas.")
+        return ComparacionJev(intencion=intencion, capacidades=catalogos)
+    if intencion != "resolver_consulta":
+        raise ValueError("Intención de consulta desconocida.")
+    if not any(catalogo["herramientas"] for catalogo in catalogos):
+        logger.info("Pedido sin herramientas disponibles; se devuelve 200 OK sin recomendación.")
+        return ComparacionJev(evaluaciones=[
+            EvaluacionJev(estado="no_sirve", mcp_evaluado=catalogo["nombre"], motivo="El MCP no publicó herramientas.")
+            for catalogo in catalogos
+        ])
+    if umbral is None:
+        raise ValueError("Falta el umbral para evaluar herramientas.")
     evaluaciones = []
     aceptadas_por_mcp = []
     for indice, catalogo in enumerate(catalogos):
@@ -203,6 +235,10 @@ async def consultar_jev(consulta: ConsultaJev, catalogos: list[dict], api_key: s
                 if isinstance(datos, dict):
                     registrar_uso_jev(datos, modelo)
                 respuesta = RespuestaJev.model_validate(datos)
+                if respuesta.answers["intencion"].choice == "consultar_capacidades":
+                    return interpretar_respuesta(respuesta, catalogos)
+                if not any(catalogo["herramientas"] for catalogo in catalogos):
+                    return interpretar_respuesta(respuesta, catalogos)
                 umbral = await anyio.to_thread.run_sync(obtener_umbral)
                 evaluacion = interpretar_respuesta(respuesta, catalogos, umbral)
                 registrar_confianza_herramientas(respuesta, catalogos)
@@ -257,12 +293,4 @@ async def evaluar_mensaje(consulta: ConsultaJev) -> ComparacionJev:
             logger.error("Falló la consulta del MCP %s: HTTP %s: %s", mcp["nombre"], error.status_code, error.detail)
             raise HTTPException(status_code=error.status_code, detail=f"MCP {mcp['nombre']}: {error.detail}") from None
         catalogos.append({"nombre": mcp["nombre"], "herramientas": herramientas})
-    if not catalogos:
-        raise HTTPException(status_code=503, detail="No hay MCP habilitados en la tabla mcps.")
-    if not any(catalogo["herramientas"] for catalogo in catalogos):
-        logger.info("Pedido sin herramientas disponibles: todos los catálogos están vacíos; se devuelve 200 OK sin recomendación.")
-        return ComparacionJev(evaluaciones=[
-            EvaluacionJev(estado="no_sirve", mcp_evaluado=catalogo["nombre"], motivo="El MCP no publicó herramientas.")
-            for catalogo in catalogos
-        ])
     return await consultar_jev(consulta, catalogos, api_key)

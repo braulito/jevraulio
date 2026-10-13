@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block titulo %}JEVraulio - MCPs{% endblock %}
+{% block clase_body %}pagina-costos pagina-mcps{% endblock %}
+{% block estilos %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/costos.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/mcps.css') }}">
+{% endblock %}
+{% block contenido %}
+<header class="encabezado"><h1>Borrar MCP</h1></header>
+{% if error %}<p class="aviso aviso-error" role="alert">{{ error }}</p>{% endif %}
+{% if registro %}
+<section class="panel confirmar-borrado">
+    <p>¿Querés borrar <strong>{{ registro.nombre }}</strong> del catálogo?</p>
+    <p class="descripcion">Se eliminará su registro de la tabla MCPs.</p>
+    <form action="{{ url_for('borrar_mcp', id_mcp=registro.id) }}" method="post">
+        <input type="hidden" name="csrf_token" value="{{ session.csrf_mcps }}">
+        <button class="boton borrar-mcp" type="submit">Confirmar borrado</button>
+        <a class="boton cancelar-mcp" href="{{ url_for('mcps') }}">Cancelar</a>
+    </form>
+</section>
+{% else %}
+<a class="boton" href="{{ url_for('mcps') }}">Volver a MCPs</a>
+{% endif %}
+{% endblock %}

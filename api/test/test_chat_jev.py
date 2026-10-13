@@ -36,6 +36,7 @@ def cargar_funciones():
     )
     exec(compile(arbol, str(archivo), "exec"), contexto)
     contexto["redactar_respuesta"] = AsyncMock(return_value="Sí")
+    contexto["redactar_capacidades"] = AsyncMock(return_value="Puedo responder consultas sobre autos.")
     contexto["redactar_aclaracion"] = AsyncMock(return_value="¿Te referís a un auto o a un plato?")
     contexto["preguntar_seleccion_real"] = contexto["preguntar_seleccion"]
     contexto["preguntar_seleccion"] = AsyncMock(return_value="¿Te referís a un auto o a un plato?")
@@ -76,6 +77,40 @@ class ChatJevTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r.estado, "sin_coincidencias")
         self.assertEqual(r.respuesta, "No tengo las herramientas necesarias para responder tu pregunta.")
         self.sin_ejecucion()
+
+    async def test_capacidades_usa_catalogos_de_jev_sin_ejecutar_tools(self):
+        capacidades = [{"nombre": "mcp_autos", "herramientas": [{
+            "name": "mejor_auto", "description": "Consulta cuál es el mejor auto",
+            "inputSchema": {"type": "object", "properties": {}},
+        }]}]
+        self.c["consultar_jeveador"] = AsyncMock(return_value=RecomendacionJev(
+            intencion="consultar_capacidades", mcp_recomendado=None, evaluaciones=[], capacidades=capacidades,
+        ))
+        consulta = ConsultaChatJev(mensaje="¿Qué datos me podés ofrecer?", contexto=["Usuario: hola"])
+        resultado = await self.c["responder_chat_jev"](consulta)
+        self.assertEqual(resultado.estado, "Ok")
+        self.assertEqual(resultado.herramientas, [])
+        self.assertIsNone(resultado.resultado)
+        self.assertEqual(resultado.respuesta, self.c["redactar_capacidades"].return_value)
+        self.c["redactar_capacidades"].assert_awaited_once_with(consulta.mensaje, consulta.contexto, capacidades)
+        self.c["obtener_mcp"].assert_not_called()
+        self.c["obtener_herramientas_mcp"].assert_not_awaited()
+        self.c["preguntar_seleccion"].assert_not_awaited()
+        self.sin_ejecucion()
+
+    async def test_cliente_jev_conserva_nuevo_contrato_de_capacidades(self):
+        datos = {
+            "intencion": "consultar_capacidades", "mcp_recomendado": None, "evaluaciones": [],
+            "capacidades": [{"nombre": "mcp_nuevo", "herramientas": [{
+                "name": "consulta_nueva", "description": "Ofrece datos nuevos", "inputSchema": {"type": "object"},
+            }]}],
+        }
+        with patch("httpx.AsyncClient") as constructor:
+            post = constructor.return_value.__aenter__.return_value.post
+            post.return_value = httpx.Response(200, json=datos, request=httpx.Request("POST", "http://jev.test/evaluar"))
+            recomendacion = await self.c["consultar_jeveador"]("¿Qué podés hacer?")
+        self.assertEqual(recomendacion.intencion, "consultar_capacidades")
+        self.assertEqual([c.model_dump() for c in recomendacion.capacidades], datos["capacidades"])
 
     async def test_varias_coincidencias_sigue_recomendacion(self):
         r = await self.flujo([evaluacion(), evaluacion("cocina")])

@@ -1,0 +1,15 @@
+Desde mcp_finanzas, en PowerShell:
+
+python -m venv mcp_finanzas
+.\mcp_finanzas\Scripts\python.exe -m pip install -r requirements.txt
+.\mcp_finanzas\Scripts\python.exe server.py
+
+Endpoint local: http://127.0.0.1:8006/mcp
+MCP externo: https://mcp.frankfurter.dev/
+No requiere .env ni claves.
+
+En la pantalla MCPs: agregar mcp_finanzas con la URL local y habilitarlo.
+Mantener el servidor encendido para usarlo desde el chat con Jeveador.
+
+Pruebas sin red ni configuración local:
+.\mcp_finanzas\Scripts\python.exe -m unittest discover -s tests -t . -v

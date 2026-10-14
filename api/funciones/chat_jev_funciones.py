@@ -12,7 +12,7 @@ from jsonschema.validators import validator_for
 from pydantic import ValidationError
 
 from funciones.base_sqlite import obtener_mcp
-from funciones.chat_funciones import llamar_herramienta_mcp, obtener_herramientas_mcp
+from funciones.mcp_funciones import llamar_herramienta_mcp, obtener_herramientas_mcp
 from funciones import openai_funciones as llm
 from funciones.respuesta_jev_funciones import redactar_aclaracion, redactar_capacidades, redactar_respuesta
 from schemas.chat import LlamadaHerramienta

@@ -1,6 +1,6 @@
 # MCP Clima
 
-Servidor FastMCP inspirado en `mcp_cocina`, con cinco herramientas meteorológicas para Buenos Aires (CABA). Todas usan el último registro del pronóstico horario de Open-Meteo y expresan la fecha y hora en GMT-3. El dato puede ser futuro: debe presentarse como pronóstico, no como condición actual.
+Servidor FastMCP de Jevraulio, con cinco herramientas meteorológicas para Buenos Aires (CABA). Todas usan el último registro del pronóstico horario de Open-Meteo y expresan la fecha y hora en GMT-3. El dato puede ser futuro: debe presentarse como pronóstico, no como condición actual.
 
 ## Arranque y configuración
 
@@ -95,12 +95,21 @@ La redacción del pronóstico conjunto debe incluir las fechas, horas, unidades 
 
 ## Verificación
 
-Pruebas del agregador con funciones simuladas, sin importar el servidor ni cargar `.env`:
+La suite está en `tests/`. Las pruebas que importan el servidor bloquean la carga de `.env` y proporcionan URLs ficticias; el agregador se prueba con funciones simuladas:
 
 ```powershell
-.\clima\Scripts\python.exe -m unittest test_pronostico -v
+.\clima\Scripts\python.exe -m unittest discover -s tests -t . -v
 ```
 
 Cubren las 16 combinaciones de éxito/fallo, fechas diferentes, excepciones, respuestas malformadas y llamada a las cuatro funciones. La implementación completó estas 4 pruebas y 42 pruebas de coordinación/redacción de la API con dependencias simuladas. La revisión posterior de descripciones verificó su sintaxis y alcance. Estos resultados no garantizan las decisiones de Jev ni el texto exacto de los modelos en producción.
 
-Las pruebas que importan `server.py` cargan su configuración: ejecutalas localmente fuera de las herramientas del agente cuando requieran el `.env` real.
+Las 22 pruebas de la suite completa pasaron con datos simulados, sin configuración local ni consultas a Open-Meteo. Para ejecutar solo el agregador: `python -m unittest tests.test_pronostico -v`.
+
+## Organización
+
+| Archivo o carpeta | Contenido |
+| --- | --- |
+| `server.py` | Servidor FastMCP y cinco herramientas. |
+| `funciones.py` | Consultas HTTP y combinación del pronóstico. |
+| `requirements.txt` | Dependencias. |
+| `tests/` | Variables meteorológicas, descubrimiento y agregador. |

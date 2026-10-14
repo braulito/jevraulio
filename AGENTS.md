@@ -1,9 +1,15 @@
 # Instrucciones para agentes
 
+Todas las instrucciones de este archivo se aplican a todos los proyectos actuales y futuros que trabajemos con Codex.
+
 ## Contrato de funciones y API
 
 - Las funciones de operaciones deben devolver `(resultado, salida)`: `(True, datos)` si funcionan y `(False, {"status_code": codigo})` si fallan.
-- Envolver las operaciones en `try`, capturar `Exception`, registrar el error sin secretos y terminar devolviendo el fallo.
+- Envolver las operaciones en `try` y capturar con `except Exception as e:`. No usar `except Exception:` sin capturar la excepción.
+- Registrar el contexto y el detalle de `e` con `logger.error("Error en nombre_funcion: %s", e)` o una f-string equivalente. No omitir la excepción ni escribir `{e}` en una cadena sin interpolación. Mantener los registros libres de credenciales y secretos.
+- Después de registrar el error, devolver `(False, {"status_code": codigo})` y conservar el código que corresponda al fallo. No sustituir el contrato por `None`, un booleano aislado ni un mensaje de texto.
+- En los `except` específicos que manejen y registren un fallo, capturar también la excepción como `e` e incluirla en el log.
+- Los endpoints y las herramientas MCP adaptan ese retorno al contrato público existente; sus bloques `except` también deben capturar `e` y registrarla.
 - Los endpoints administrativos SQL publican `{"resultado": bool, "salida": datos}` y conservan los códigos HTTP correspondientes. No convertir todos los errores en 200 ni en un único código.
 - Costos, MCPs y Umbral deben comprobar el resultado de las llamadas y mostrar el modal cuando falla la API.
 - En las consultas de listados de Costos y MCPs, HTTP 404 significa ausencia de información: mostrar un mensaje en el lugar de la tabla sin modal. Esta excepción no aplica a escrituras ni a Umbral.
@@ -18,3 +24,9 @@
 - No solicitar permisos elevados ni intentar eludir una denegación de acceso a estos archivos.
 
 Estas instrucciones son una regla de comportamiento. El bloqueo técnico debe configurarse adicionalmente en los permisos del entorno de Codex. `.gitignore` no bloquea la lectura por parte del agente.
+
+## Organización de componentes y pruebas
+
+- Cada componente o proyecto debe tener un `README.md` propio que explique su responsabilidad, arranque, configuración, interfaces o herramientas, contratos, límites y cómo ejecutar sus pruebas cuando las tenga. Usar `mcp_finanzas/README.md` de Jevraulio como referencia de estructura cuando esté disponible.
+- Las suites de pruebas deben guardarse en la carpeta `tests/` de su componente. No dejar archivos de pruebas en la raíz ni usar una carpeta `test/`.
+- Al mover pruebas, actualizar importaciones, rutas, comandos y referencias de documentación; mantener su aislamiento de secretos, servicios y bases reales.

@@ -1,1 +1,12 @@
-python app.py
+Desde pagina, en PowerShell:
+
+.\pagina\Scripts\python.exe -m pip install -r requirements.txt
+.\pagina\Scripts\python.exe app.py
+
+Página: http://127.0.0.1:8000/
+Configurar las URLs de la API antes de arrancar.
+
+Pruebas sin cargar configuración local:
+.\pagina\Scripts\python.exe -m unittest discover -s tests -t . -v
+
+Ver README.md para configuración, pantallas y contratos.

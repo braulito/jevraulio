@@ -19,20 +19,6 @@ from schemas.jev import ComparacionJev, ConsultaJev, EvaluacionJev, RespuestaJev
 logger = logging.getLogger("uvicorn.error.confianza.jev")
 
 
-def registrar_confianza_herramientas(respuesta: RespuestaJev, catalogos: list[dict]) -> None:
-    """Registra la decisión, confianza y probabilidades de cada herramienta."""
-    for indice, catalogo in enumerate(catalogos):
-        for numero, herramienta in enumerate(catalogo["herramientas"]):
-            decision = respuesta.answers[f"herramienta_{indice}_{numero}"]
-            confianza = decision.confidence
-            logger.info(
-                "MCP: %s, TOOL: %s, DECISION: %s, CONFIANZA: %s, PROBABILIDADES: %s",
-                catalogo["nombre"], herramienta["name"], decision.choice,
-                confianza if confianza is not None else "no informada",
-                decision.probabilities if decision.probabilities is not None else "no informadas",
-            )
-
-
 CRITERIOS = {
     "sirve": "Las herramientas cubren TODO el pedido y los datos necesarios están disponibles.",
     "sirve_parcialmente": "Una parte concreta del pedido es resoluble y otra está fuera de las capacidades publicadas.",
@@ -241,7 +227,6 @@ async def consultar_jev(consulta: ConsultaJev, catalogos: list[dict], api_key: s
                     return interpretar_respuesta(respuesta, catalogos)
                 umbral = await anyio.to_thread.run_sync(obtener_umbral)
                 evaluacion = interpretar_respuesta(respuesta, catalogos, umbral)
-                registrar_confianza_herramientas(respuesta, catalogos)
                 return evaluacion
     except (TimeoutError, httpx.TimeoutException):
         raise HTTPException(status_code=504, detail="Jev superó el tiempo de espera.") from None

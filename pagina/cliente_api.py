@@ -1,6 +1,7 @@
 """Comunicación del servidor Flask con el endpoint configurado en API_URL."""
 
 import json
+from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 
@@ -8,6 +9,15 @@ def consultar_chat(api_url: str, mensaje: str, contexto: list[str] | None = None
     """Solo acepta HTTP 200, estado Ok y una respuesta de texto."""
     if not api_url or not api_url.strip():
         raise ValueError("API_URL no está configurada.")
+
+    # Migrar la URL anterior sin modificar la configuración local del usuario.
+    partes = urlsplit(api_url.strip())
+    ruta = partes.path.rstrip("/")
+    if ruta.endswith("/chat"):
+        ruta += "/jev"
+    elif not ruta:
+        ruta = "/chat/jev"
+    api_url = urlunsplit((partes.scheme, partes.netloc, ruta, partes.query, partes.fragment))
 
     datos_peticion = {"mensaje": mensaje}
     if contexto:

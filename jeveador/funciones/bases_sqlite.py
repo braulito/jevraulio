@@ -152,7 +152,7 @@ def insertar_mcp_clima_temporal() -> None:
 
 
 def crear_tabla_mcps() -> None:
-    """Crear el catálogo y sus datos iniciales solo si la tabla no existe."""
+    """Crear el catálogo con Finanzas y Clima habilitados si la tabla no existe."""
     with conexion_sqlite() as conexion:
         # Mantener la comprobación, creación e inserción en una transacción.
         conexion.execute("BEGIN IMMEDIATE")
@@ -173,8 +173,7 @@ def crear_tabla_mcps() -> None:
         conexion.executemany(
             "INSERT INTO mcps (nombre, url, habilitado) VALUES (?, ?, ?)",
             [
-                ("mcp_autos", "http://localhost:8003/mcp", 1),
-                ("mcp_cocina", "http://localhost:8004/mcp", 1),
+                ("mcp_finanzas", "http://127.0.0.1:8006/mcp", 1),
                 ("mcp_clima", "http://localhost:8005/mcp", 1),
             ],
         )

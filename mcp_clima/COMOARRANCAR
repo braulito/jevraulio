@@ -1,3 +1,12 @@
-# Desde la carpeta mcp_clima, en PowerShell:
+Desde mcp_clima, en PowerShell:
+
 .\clima\Scripts\python.exe -m pip install -r requirements.txt
-.\clima\Scripts\python.exe server.py --servidor
+.\clima\Scripts\python.exe server.py
+
+Endpoint: http://127.0.0.1:8005/mcp
+Configurar las cuatro URLs de Open-Meteo antes de arrancar.
+
+Pruebas con URLs ficticias y carga de configuración bloqueada:
+.\clima\Scripts\python.exe -m unittest discover -s tests -t . -v
+
+Ver README.md para variables, herramientas y pronóstico conjunto.

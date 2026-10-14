@@ -30,7 +30,7 @@ class RutaSql(APIRoute):
         return manejar
 
 
-router = APIRouter(prefix="/consultas_sql", tags=["admin sql"], route_class=RutaSql,
+router = APIRouter(prefix="/consultas_sql", tags=["Admin - SQL"], route_class=RutaSql,
                    default_response_class=JSONResponse, responses={
     400: {"description": "Datos inválidos.", "model": ResultadoSql},
     404: {"description": "Registro inexistente.", "model": ResultadoSql},

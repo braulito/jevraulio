@@ -1,115 +1,13 @@
-uvicorn main:app --port 8002 --reload
+Desde jeveador, en PowerShell:
 
-Ejecutar desde la carpeta jeveador, con el entorno virtual activado.
-Instalar dependencias: python -m pip install -r reqs.txt
-
-Se carga jeveador/.env automáticamente. Variables obligatorias:
-  JEV_KEY: clave de OpenRouter para usar Jev.
-  JEV_URL: URL del servicio de decisiones de Jev.
-  JEV_MODELO: identificador del modelo de Jev.
-  UMBRAL_DEFECTO: número decimal de respaldo si no se puede leer config_umbral.
-  CADENA: ruta del archivo SQLite que contiene las tablas billing y mcps.
-  Para compartir la base con la API, usar la misma ruta absoluta en ambos componentes.
-  Una ruta relativa se interpreta desde la carpeta jeveador.
-
-En cada POST /evaluar se llama a obtener_mcps() y se consultan los registros con
-habilitado = 1. Sus nombres y URLs se leen de la tabla mcps, sin usar MCP_AUTOS_URL
-ni MCP_COCINA_URL del entorno. Los cambios en la tabla se usan en la próxima consulta.
-Todos los MCP habilitados deben estar encendidos. Si alguno falla, se devuelve
-un error con su nombre; no se presenta una comparación incompleta.
-Si la dirección configurada no tiene ruta, se agrega /mcp automáticamente.
-Reiniciar Uvicorn después de cambiar el .env.
+.\jeveador\Scripts\python.exe -m pip install -r reqs.txt
+.\jeveador\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8002 --reload
 
 Swagger: http://127.0.0.1:8002/docs
-POST /evaluar -> Try it out -> enviar:
-  {"mensaje": "¿Cuál es el mejor auto según el MCP?"}
+Endpoint: POST /evaluar
+Configurar las variables locales y SQLite; mantener los MCP habilitados encendidos.
 
-Se envían todos los catálogos en una sola solicitud a Jev para compararlos.
-Las reglas comunes se envían una sola vez en state.reglas. Cada pregunta usa
-una instrucción corta que referencia esas reglas y el índice del MCP o herramienta.
-Se conservan el contexto, las descripciones, los esquemas completos y todas
-las decisiones de cobertura, aplicabilidad y recomendación. No se truncan datos.
-La reducción efectiva de tokens se observa en las próximas filas JEV de billing;
-el tamaño del JSON enviado no equivale exactamente a tokens facturados.
-Devuelve mcp_recomendado (nombre o null) y evaluaciones, con una entrada por MCP:
-mcp_evaluado, estado, motivo, herramientas_aplicables y requiere_aclaracion.
-Cada estado puede ser sirve, sirve_parcialmente, no_sirve o falta_informacion.
-Si hay varios MCP pertinentes pero el mensaje y contexto no permiten elegir
-una intención, mcp_recomendado puede ser null conservando sus evaluaciones.
-La API usa esa combinación para pedir una aclaración natural al usuario.
-Si todos publican catálogos vacíos o no hay MCP habilitados, se consulta a Jev solo
-para clasificar la intención. Una consulta concreta queda sin recomendación;
-una consulta de capacidades devuelve los catálogos vacíos o una lista vacía.
-No ejecuta herramientas.
-La API de la carpeta api no participa en esta evaluación.
+Pruebas sin configuración local ni proveedores reales:
+.\jeveador\Scripts\python.exe -m unittest discover -s tests -t . -v
 
-Consulta de capacidades (también POST /evaluar):
-  {"mensaje": "¿Qué datos me podés ofrecer?"}
-Jev clasifica intencion como consultar_capacidades o resolver_consulta en la misma
-solicitud de decisiones. La clasificación considera mensaje y contexto.
-Cuando intencion es consultar_capacidades, devuelve:
-  intencion: consultar_capacidades
-  mcp_recomendado: null
-  evaluaciones: []
-  capacidades: [{nombre, herramientas: [{name, description, inputSchema}]}]
-Los datos proceden del catálogo real de cada MCP habilitado, sin URLs ni contenido
-inventado. Se vuelven a consultar en cada petición. No se aplica el umbral ni se
-ejecutan herramientas para listar capacidades. El consumo de la clasificación
-se guarda en billing. La redacción de la respuesta al usuario por la API queda pendiente.
-Las consultas normales devuelven intencion resolver_consulta y capacidades [].
-
-Estructura:
-  main.py: crea FastAPI y registra routers.
-  routers/jev.py: POST /evaluar y errores documentados.
-  schemas/jev.py: modelos de entrada y salida.
-  funciones/entorno.py: carga automática del entorno.
-  funciones/mcp_funciones.py: conexión y descubrimiento de herramientas.
-  funciones/jev_funciones.py: solicitudes a Jev y evaluación.
-  funciones/billing.py: preparación del consumo para guardar en SQLite.
-  funciones/bases_sqlite.py: conexión SQLite, billing y catálogo mcps.
-
-El consumo se guarda en SQLite sin imprimir su JSON en consola.
-No se imprime el JSON completo de decisiones ni las probabilidades del proveedor.
-Se registra una línea INFO por herramienta con MCP, TOOL, DECISION y CONFIANZA.
-DECISION puede ser aplicable o no_aplicable; CONFIANZA corresponde a esa decisión,
-no a la probabilidad de que la herramienta sea aplicable.
-Si confidence no viene informado, se muestra "no informada" y se descarta la herramienta.
-Para aceptar una herramienta, primero debe ser aplicable y luego su confidence debe
-superar estrictamente el umbral obtenido de config_umbral en cada consulta.
-Si falta el registro o falla la lectura, obtener_umbral() usa UMBRAL_DEFECTO.
-Si esa variable falta o no puede convertirse a decimal al iniciar, se usa 0.5.
-Una confianza igual al umbral también se descarta. La confianza no se guarda en SQLite.
-Si un MCP pierde todas sus herramientas por el filtro, pasa a no_sirve. Si era el
-recomendado, la recomendación pasa a null sin sustituirlo por otro MCP automáticamente.
-Si solo conserva parte de las herramientas de una evaluación sirve, pasa a sirve_parcialmente.
-Una cobertura positiva sin herramientas pertinentes se registra como inconsistencia
-y pasa a no_sirve. Una recomendación sin herramientas pertinentes se registra y
-se descarta, devolviendo 200 OK con mcp_recomendado null en lugar de 502.
-Los candidatos o decisiones desconocidos y las respuestas incompletas siguen siendo errores.
-Los detalles de caché y razonamiento no se suman nuevamente.
-Los campos ausentes o null se toman como 0; si no viene total_tokens, se calcula
-entrada + salida con esos valores. El costo viene de usage.cost, sin aplicar tarifas.
-Cada respuesta HTTP exitosa de Jev inserta una fila en billing, incluso si luego
-la decisión resulta inválida. metodo y herramientas contienen exactamente JEV.
-La tabla usa la misma definición que api/funciones/base_sqlite.py y no guarda JSON.
-No se registra consumo para el descubrimiento del catálogo MCP: no llama al modelo.
-
-La tabla billing debe existir. Si la base ya se usa desde la API, no hace falta
-volver a crearla. Para inicializar una base nueva, ejecutar localmente desde jeveador:
-  python -c "from funciones import entorno; from funciones.bases_sqlite import crear_tabla_billing; crear_tabla_billing()"
-
-La tabla mcps debe existir. Para crearla e insertar los dos MCP iniciales:
-  python -c "from funciones import entorno; from funciones.bases_sqlite import crear_tabla_mcps; crear_tabla_mcps()"
-Solo se insertan mcp_autos (http://localhost:8003/mcp) y mcp_cocina
-(http://localhost:8004/mcp) si la tabla no existe. Si existe, se conserva su contenido.
-
-Jev se consulta mediante OpenRouter:
-  Configurar en el .env, sin comillas:
-  JEV_URL=https://openrouter.ai/api/alpha/decisions
-  JEV_MODELO=typesafe/jev-1.13
-  La cuenta de OpenRouter debe tener créditos y acceso al modelo.
-Referencia del contrato HTTP:
-  https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-request
-
-Pruebas aisladas (sustituyen la carga del .env y no usan servicios reales):
-  python -m unittest discover -s test -v
+Ver README.md para configuración, evaluación, umbral y contratos.

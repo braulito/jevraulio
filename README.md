@@ -1,6 +1,8 @@
-# Arquitectura de **JEV**_raulio_
+# **JEV**_raulio_ — Arquitectura y puesta en marcha
 
-Actualizada el 13 de octubre de 2026 a partir del código. Este documento describe la implementación actual, sus contratos y sus límites. Reemplaza la propuesta inicial de sesiones persistentes. No se inspeccionaron archivos `.env`, credenciales ni bases configuradas; las variables y tablas se documentan según el código.
+Actualizado el 13 de octubre de 2026 a partir del código. Jevraulio conecta un chat con servidores MCP por temática: Jeveador evalúa qué herramientas corresponden, la API valida y ejecuta una de ellas, y OpenAI prepara los argumentos y redacta la respuesta. Los dominios activos documentados son Clima y Finanzas.
+
+La API publica un único endpoint de chat, `POST /chat/jev`, además de la administración SQL. Finanzas utiliza el MCP externo de Frankfurter; Clima consulta Open-Meteo. Cada componente tiene su propio README y sus suites en `tests/`. Esta revisión no accedió a archivos `.env`, credenciales ni bases reales.
 
 ## Contenido
 
@@ -19,9 +21,9 @@ Actualizada el 13 de octubre de 2026 a partir del código. Este documento descri
   - [Contratos](#contratos)
   - [Respuesta cuando no hay coincidencias](#respuesta-cuando-no-hay-coincidencias)
   - [Redacción después de ejecutar](#redacción-después-de-ejecutar)
-- [Flujos conservados](#flujos-conservados)
 - [Contexto y estado](#contexto-y-estado)
 - [Servidores MCP](#servidores-mcp)
+  - [MCP Finanzas y Frankfurter](#mcp-finanzas-y-frankfurter)
 - [Páginas y administración](#páginas-y-administración)
   - [Chat](#chat)
   - [Costos](#costos)
@@ -34,6 +36,7 @@ Actualizada el 13 de octubre de 2026 a partir del código. Este documento descri
   - [Tabla `billing`](#tabla-billing)
 - [Consumo y costos](#consumo-y-costos)
 - [Variables y arranque](#variables-y-arranque)
+  - [Orden de puesta en marcha](#orden-de-puesta-en-marcha)
 - [Archivos locales y backups](#archivos-locales-y-backups)
 - [Organización de módulos](#organización-de-módulos)
 - [Límites y observabilidad](#límites-y-observabilidad)
@@ -46,7 +49,7 @@ Este proyecto se desarrolló mediante **vibe coding**, con asistencia de intelig
 
 ## Configuración inicial
 
-Antes de iniciar el chat, creá las cuentas de los dos proveedores y los archivos de configuración local descritos abajo. Los ejemplos contienen claves ficticias: reemplazalas únicamente en tu máquina. El MCP de clima también requiere las cuatro URLs de consulta descritas en su [README](mcp_clima/README.md).
+Antes de iniciar el chat, creá las cuentas de los dos proveedores y los archivos de configuración local descritos abajo. Los ejemplos contienen claves ficticias: reemplazalas únicamente en tu máquina. El MCP de Clima también requiere las cuatro URLs de consulta descritas en su [README](mcp_clima/README.md). El MCP de [Finanzas](mcp_finanzas/README.md) se puede arrancar sin configuración local ni claves.
 
 ### Crear cuentas y generar las claves de API
 
@@ -80,8 +83,6 @@ Creá manualmente un archivo llamado exactamente `.env` en cada una de estas car
 API_KEY=REEMPLAZAR_CON_TU_CLAVE_OPENAI
 MODELO_OPENAI=gpt-4.1-mini
 JEV_URL=http://127.0.0.1:8002/evaluar
-MCP_AUTOS_URL=http://127.0.0.1:8003/mcp
-MAX_RONDAS=5
 CADENA=../sqlserver/base.db
 MAX_CONTEXTO=20
 ```
@@ -110,7 +111,7 @@ MAX_CONTEXTO=20
 PAGINA_SIZE=50
 ```
 
-El chat y la administración SQL de la página no necesitan claves de los proveedores. Los clientes auxiliares de administración de Jev en `pagina/funciones.py` sí requieren `JEV_ADMIN_KEY` si se utilizan; no se llaman automáticamente al cargar Costos. Los MCP de ejemplo tampoco necesitan credenciales de OpenAI ni OpenRouter.
+El chat y la administración SQL de la página no necesitan claves de los proveedores. Los clientes auxiliares de administración de Jev en `pagina/funciones.py` sí requieren `JEV_ADMIN_KEY` si se utilizan; no se llaman automáticamente al cargar Costos. Clima y Finanzas tampoco necesitan credenciales de OpenAI ni OpenRouter. Finanzas no requiere archivo `.env`: utiliza el endpoint público de Frankfurter definido en su cliente.
 
 Las rutas `CADENA` de API y Jeveador resuelven al mismo archivo SQLite porque sus carpetas están al mismo nivel. Si usás otra ubicación, ajustá ambas para que apunten a la misma base. Costos, Umbral y MCPs en Flask utilizan la API; no necesitan `CADENA` en la página. La base local está excluida de Git: estos archivos de configuración no crean sus tablas. Consultá la sección [SQLite](#sqlite) para los requisitos de inicialización.
 
@@ -118,14 +119,26 @@ Mantené `MAX_CONTEXTO` igual en los tres archivos y reiniciá los servicios des
 
 ## Componentes
 
+Cada componente tiene su propio README con responsabilidad, arranque, configuración, contratos y pruebas:
+
+| Componente | Documentación |
+| --- | --- |
+| API | [api/README.md](api/README.md) |
+| Jeveador | [jeveador/README.md](jeveador/README.md) |
+| Página | [pagina/README.md](pagina/README.md) |
+| MCP Clima | [mcp_clima/README.md](mcp_clima/README.md) |
+| MCP Finanzas | [mcp_finanzas/README.md](mcp_finanzas/README.md) |
+| SQLite | [sqlserver/README.md](sqlserver/README.md) |
+
+Las suites se guardan en la carpeta `tests/` de cada componente. Desde su carpeta, con el entorno correspondiente activado, ejecutar `python -m unittest discover -s tests -t . -v`. Para una suite individual, usar `python -m unittest tests.test_finanzas -v`, por ejemplo desde MCP Finanzas. Los componentes se prueban por separado para evitar colisiones entre módulos del mismo nombre.
+
 | Componente | Tecnología | Dirección habitual de desarrollo | Responsabilidad |
 | --- | --- | --- | --- |
 | `pagina/` | Flask, Jinja, HTML/CSS/JavaScript | `http://127.0.0.1:8000` | Chat, contexto de pestaña, costos, edición del umbral y administración de MCPs. |
 | `api/` | FastAPI y Uvicorn | `http://127.0.0.1:8001` | Coordina Jeveador, OpenAI y ejecución MCP; sirve las operaciones administrativas SQL. |
 | `jeveador/` | FastAPI y Uvicorn | `http://127.0.0.1:8002` | Evalúa capacidades mediante Jev/OpenRouter; no ejecuta tools. |
-| `mcp_autos/` | FastMCP, Streamable HTTP | `http://127.0.0.1:8003/mcp` | Herramientas de ejemplo sobre autos. |
-| `mcp_cocina/` | FastMCP, Streamable HTTP | `http://127.0.0.1:8004/mcp` | Herramientas de ejemplo sobre platos. |
 | `mcp_clima/` | FastMCP, Streamable HTTP | `http://127.0.0.1:8005/mcp` | Temperatura, lluvias, sensación térmica, presión en superficie y pronóstico conjunto para CABA, con fechas en GMT-3. |
+| `mcp_finanzas/` | FastMCP, Streamable HTTP | `http://127.0.0.1:8006/mcp` | Puente al MCP externo de Frankfurter: conversión de divisas, tipos de referencia, monedas y fuentes. No requiere configuración local. |
 | SQLite | `sqlite3` de Python | Archivo indicado por `CADENA` | Catálogo, costos y descripciones de errores. |
 | OpenAI | Responses API por HTTPX | Servicio externo | Prepara argumentos, pide aclaraciones y redacta respuestas. |
 | Jev/OpenRouter | API de decisiones por HTTPX | Servicio externo configurado | Decide cobertura, aplicabilidad y recomendación. |
@@ -139,9 +152,13 @@ flowchart LR
     P --> A[FastAPI · API · 8001]
     A --> J[FastAPI · Jeveador · 8002]
     J --> V[Jev en OpenRouter]
-    J --> M[MCP habilitados · catálogos]
+    J --> M[Clima y Finanzas habilitados · catálogos]
     A --> L[OpenAI · argumentos y redacción]
     A --> E[MCP seleccionado · ejecución]
+    E --> C[MCP Clima · 8005]
+    E --> F[MCP Finanzas · 8006]
+    C --> O[Open-Meteo · HTTP]
+    F --> R[Frankfurter · MCP externo]
     A --> D[(SQLite)]
     J --> D
     P -->|Costos, umbral y MCPs por HTTP JSON| A
@@ -149,18 +166,17 @@ flowchart LR
 
 ## Rutas
 
+El único endpoint de chat de la API es `/chat/jev`. `/chat`, `/mejor_auto` y `/es_mejor_auto` de la API fueron retirados. El `/chat` de Flask continúa recibiendo el formulario del navegador y reenvía al endpoint de Jeveador.
+
 | Servicio | Método y ruta | Uso |
 | --- | --- | --- |
 | Página | `GET /`, `GET /index.html` | Interfaz del chat. |
-| Página | `POST /chat` | Valida entrada, consulta `API_URL` y devuelve texto. |
+| Página | `POST /chat` | Ruta interna del formulario; valida entrada, consulta la API `/chat/jev` y devuelve texto. |
 | Página | `GET /costos`, `GET /costos.html` | Consumos, filtros y paginación. |
 | Página | `GET/POST /umbral`, `GET/POST /umbral.html` | Consultar y guardar el umbral de confianza como porcentaje. |
 | Página | `GET/POST /mcps`, `GET/POST /mcps.html` | Listar MCPs y cambiar su habilitación. |
 | Página | `POST /mcps/agregar` | Agregar nombre y URL; siempre deshabilitado. |
 | Página | `GET/POST /mcps/<id_mcp>/borrar` | Mostrar confirmación y eliminar el registro mediante POST. |
-| API | `GET /mejor_auto` | Ejecuta directamente la herramienta MCP, sin LLM. |
-| API | `POST /es_mejor_auto` | Ejecuta directamente con el parámetro `auto`, sin LLM. |
-| API | `POST /chat` | Chat original con OpenAI contra `MCP_AUTOS_URL`. |
 | API | `POST /chat/jev` | Evalúa con Jeveador y coordina selección y ejecución. |
 | API | `GET /consultas_sql/costos` | Consumos paginados, filtros y totales por grupo. |
 | API | `GET/POST /consultas_sql/mcps` | Listar MCPs o agregar uno deshabilitado. |
@@ -172,7 +188,7 @@ API y Jeveador tienen Swagger en `/docs`. Las rutas de negocio usan JSON; MCP us
 
 ## API administrativa SQL
 
-El router `api/routers/consultas_sql.py` publica ocho operaciones bajo `/consultas_sql`, con el tag **admin sql** en Swagger. La conexión y las consultas están en `api/funciones/consultas_sql_funciones.py`. Trabajan sobre las tablas existentes; no crean ni repueblan tablas. Los clientes reutilizables de Flask están en `pagina/funciones.py` y utilizan `urllib.request`, con GET, POST, PATCH, DELETE o PUT según la operación.
+El router `api/routers/consultas_sql.py` publica ocho operaciones bajo `/consultas_sql`, con el tag **Admin - SQL** en Swagger. La conexión y las consultas están en `api/funciones/consultas_sql_funciones.py`. Trabajan sobre las tablas existentes; no crean ni repueblan tablas. Los clientes reutilizables de Flask están en `pagina/funciones.py` y utilizan `urllib.request`, con GET, POST, PATCH, DELETE o PUT según la operación.
 
 ### Contrato de funciones y respuestas HTTP
 
@@ -231,7 +247,7 @@ El tamaño de página debe ser positivo. Los esquemas de la API rechazan campos 
 ## Flujo principal del chat con Jeveador
 
 1. El navegador manda el mensaje actual y contexto reciente a Flask.
-2. Flask valida y reenvía a la API usando `cliente_api.py`. `API_URL` debe incluir `/chat/jev`: la página no agrega la ruta.
+2. Flask valida y reenvía a la API usando `cliente_api.py`. `API_URL` debe apuntar a `/chat/jev`. El cliente convierte una URL antigua terminada en `/chat` a `/chat/jev` y admite una URL base.
 3. La API manda `mensaje` y `contexto` a `POST /evaluar` de Jeveador.
 4. Jeveador lee `mcps` y consulta `list_tools()` de todos los servidores habilitados, con paginación.
 5. Envía a Jev una solicitud con mensaje, contexto, catálogos y preguntas de intención/cobertura/aplicabilidad/recomendación. Las reglas se envían una sola vez en `state.reglas`.
@@ -240,7 +256,7 @@ El tamaño de página debe ser positivo. Los esquemas de la API rechazan campos 
 8. Para ejecutar, busca la URL del MCP recomendado en SQLite y exige que esté habilitado. Las URLs no proceden de la LLM.
 9. Descubre nuevamente su catálogo y limita las herramientas a las recomendadas por Jeveador.
 10. OpenAI prepara una llamada o pide datos. La API verifica nombre y argumentos mediante JSON Schema.
-11. Ejecuta una herramienta por MCP y conserva el resultado completo.
+11. Ejecuta como máximo una herramienta del MCP seleccionado en esa petición y conserva el resultado completo.
 12. Otra llamada OpenAI, sin herramientas habilitadas, redacta una respuesta natural con mensaje, contexto y resultado real.
 13. La API devuelve el contrato del chat; Flask extrae `respuesta` y el navegador la muestra con Markdown sanitizado.
 
@@ -292,7 +308,7 @@ sequenceDiagram
 | OpenAI solicita varias herramientas | Pide precisar la primera operación. |
 | Catálogo inconsistente, MCP deshabilitado o argumentos inválidos | Error HTTP; no ejecuta esa llamada. |
 
-El usuario contesta normalmente, por ejemplo «un plato». La página manda la pregunta anterior y la respuesta como contexto; Jeveador vuelve a evaluar y la API selecciona. No hay un clasificador local de palabras. Jeveador valida las decisiones del proveedor y acepta una herramienta solo si su decisión es `aplicable` y su `confidence` supera estrictamente el umbral leído mediante `obtener_umbral()` en cada evaluación. Una confianza ausente, igual o inferior al umbral descarta la herramienta. El umbral proviene de `config_umbral`; si falla su lectura, se usa `UMBRAL_DEFECTO`, cuyo respaldo es 0.5 si no puede convertirse a decimal.
+El usuario contesta normalmente, por ejemplo «una conversión de dólares a euros». La página manda la pregunta anterior y la respuesta como contexto; Jeveador vuelve a evaluar y la API selecciona. No hay un clasificador local de palabras. Jeveador valida las decisiones del proveedor y acepta una herramienta solo si su decisión es `aplicable` y su `confidence` supera estrictamente el umbral leído mediante `obtener_umbral()` en cada evaluación. Una confianza ausente, igual o inferior al umbral descarta la herramienta. El umbral proviene de `config_umbral`; si falla su lectura, se usa `UMBRAL_DEFECTO`, cuyo respaldo es 0.5 si no puede convertirse a decimal.
 
 Si el filtro deja un MCP sin herramientas aceptadas, su evaluación pasa a `no_sirve`, sin pedir aclaración. Si era el recomendado, `mcp_recomendado` pasa a `null`, sin sustituirlo automáticamente por otro MCP. Si conserva solo parte de las herramientas de una evaluación `sirve`, pasa a `sirve_parcialmente`. Estos descartes no generan un 502. Las contradicciones interpretables de cobertura o recomendación se registran como advertencias y se normalizan conservadoramente: cobertura sin herramientas pasa a `no_sirve`, y recomendaciones sin herramientas pertinentes o incompatibles con la prioridad de cobertura pasan a `null`. Los estados, decisiones o candidatos desconocidos y las respuestas incompletas siguen produciendo un error de validación.
 
@@ -342,32 +358,40 @@ Fuentes oficiales de respaldo:
 Entrada mínima de `/chat/jev`:
 
 ```json
-{"mensaje": "¿Cuál es el mejor auto?"}
+{"mensaje": "Convertí 100 USD a EUR"}
 ```
 
 Continuación con contexto:
 
 ```json
 {
-  "mensaje": "un plato",
+  "mensaje": "euros",
   "contexto": [
-    "Usuario: ¿Cuál es el mejor?",
-    "Asistente: ¿Te referís a un auto o a un plato?"
+    "Usuario: Convertí 100 dólares estadounidenses.",
+    "Asistente: ¿A qué moneda querés convertirlos?"
   ]
 }
 ```
 
-Respuesta pública de `/chat` y `/chat/jev`:
+Respuesta pública de `/chat/jev`:
 
 ```json
 {
   "estado": "Ok",
   "respuesta": "Texto para el usuario.",
-  "herramientas": ["mejor_auto"]
+  "herramientas": ["convertir_divisas"]
 }
 ```
 
 Aclaraciones y respuestas sin coincidencias conservan `estado: "Ok"` y `herramientas: []`. `Ok` indica que se produjo una respuesta, no que necesariamente se ejecutó una operación. Los estados internos y el resultado MCP completo no se exponen en este contrato. Un `isError` del protocolo se comunica en el texto.
+
+El router `api/routers/chat_jev.py` protege con un único `try` la coordinación y la construcción de la respuesta pública. Captura `HTTPException as e`, registra `e` y devuelve `JSONResponse` con el mismo código HTTP, detalle y cabeceras. Captura además `Exception as e` para los fallos inesperados, los registra y devuelve HTTP 500 con este cuerpo:
+
+```json
+{"detail": "Error interno al procesar la respuesta del chat."}
+```
+
+El router devuelve los fallos sin `raise`. Las validaciones de entrada siguen a cargo de FastAPI y responden 422 antes de entrar al cuerpo del endpoint. Un resultado de negocio `error_mcp` sigue usando HTTP 200 y `estado: "Ok"`, con el prefijo «La herramienta informó un error: » en el texto; un fallo HTTP devuelve su estado y el cuerpo `{"detail": ...}`. La administración SQL conserva el contrato `resultado/salida`.
 
 Jeveador devuelve `intencion`, `mcp_recomendado` (nombre o `null`), `evaluaciones` y `capacidades`. Cada evaluación tiene `estado`, `mcp_evaluado`, `motivo`, `herramientas_aplicables` y `requiere_aclaracion`. Los estados son `sirve`, `sirve_parcialmente`, `no_sirve` y `falta_informacion`. En una consulta de capacidades devuelve los catálogos, sin recomendar una ejecución ni aplicar el umbral de herramientas.
 
@@ -397,12 +421,6 @@ Para Clima, la temperatura debe conservar la fecha, hora y zona GMT-3 como dato 
 
 Flask responde al navegador solamente `{"respuesta": "Texto para el usuario."}`. Ante un HTTP inválido, error de conexión o contrato incorrecto, devuelve 502 y «Ocurrió un error», registrando el diagnóstico en consola.
 
-## Flujos conservados
-
-`POST /chat` no consulta Jeveador: usa el MCP de `MCP_AUTOS_URL`, adapta dinámicamente todas sus herramientas para OpenAI (`strict: false`), valida las llamadas y devuelve sus resultados con `function_call_output`. Puede realizar varias rondas hasta `MAX_RONDAS`, incluyendo la redacción final. Recibe solo `mensaje` y no aprovecha el contexto de la página: sus turnos son independientes.
-
-Las rutas directas `/mejor_auto` y `/es_mejor_auto` crean sesiones MCP y llaman funciones explícitas. No usan una LLM ni generan filas de consumo. Agregar herramientas al MCP no crea automáticamente nuevas rutas REST.
-
 ## Contexto y estado
 
 `pagina/static/js/chat.js` conserva un arreglo por pestaña con mensajes prefijados por `Usuario:` y `Asistente:`. Solo incorpora turnos con respuesta HTTP válida. No guarda trazas de herramientas.
@@ -419,27 +437,46 @@ Las descripciones y esquemas vienen de docstrings/anotaciones de FastMCP, no de 
 
 | Servidor | Herramienta | Resultado actual de ejemplo |
 | --- | --- | --- |
-| Autos | `mejor_auto()` | `Fiat Pulse` |
-| Autos | `es_mejor_auto(auto)` | `Si` para Fiat Pulse; `No` para otros nombres. |
-| Cocina | `es_mejor_plato(plato)` | `Si` para milanesa/milanesas; `No` para otros nombres. |
-| Cocina | `compara_platos(plato_a, plato_b)` | Prefiere milanesas cuando es un candidato; empate para nombres iguales; sin criterio para elegir entre otros dos platos distintos. |
 | Clima | `get_temperatura()` | Fecha/hora GMT-3 y última temperatura del aire pronosticada para CABA en °C. |
 | Clima | `get_precipitaciones()` | Fecha/hora GMT-3 y última probabilidad horaria de lluvias pronosticada para CABA, de 0 a 100%. |
 | Clima | `get_sensacion_termica()` | Fecha/hora GMT-3 y última temperatura aparente pronosticada en °C. |
 | Clima | `get_presion()` | Fecha/hora GMT-3 y última presión atmosférica en superficie pronosticada en hPa. |
 | Clima | `get_pronostico()` | Las cuatro variables en un JSON, con sus fechas y los datos faltantes identificados. |
+| Finanzas | `convertir_divisas(importe, moneda_origen, moneda_destino, fecha, proveedor)` | Conversión por el MCP externo de Frankfurter; fecha y proveedor opcionales. |
+| Finanzas | `get_tipos_cambio(moneda_base, monedas_destino, fecha, proveedor)` | Tipos de referencia con destinos, fecha y proveedor opcionales. |
+| Finanzas | `get_monedas()` | Monedas admitidas por Frankfurter. |
+| Finanzas | `get_proveedores()` | Instituciones y cobertura de las fuentes de Frankfurter. |
 
-Autos y Cocina usan respuestas programadas, no rankings históricos. Las comparaciones normalizan espacios exteriores y mayúsculas/minúsculas. Clima consulta Open-Meteo y usa el último registro del pronóstico; ese dato puede ser futuro y no debe presentarse como una observación actual.
+Clima consulta Open-Meteo y usa el último registro del pronóstico; ese dato puede ser futuro y no debe presentarse como una observación actual.
 
 Las descripciones de Clima separan los pedidos generales de los específicos. «Qué clima hace», «cómo está el tiempo», «dame el pronóstico» y pedidos con dos o más variables corresponden a `get_pronostico()`. Una consulta solo de temperatura, frío/calor o abrigo corresponde a `get_temperatura()`; lluvias o paraguas a `get_precipitaciones()`; sensación térmica a `get_sensacion_termica()`; presión atmosférica a `get_presion()`. Sin ciudad explícita usan CABA por defecto; no permiten consultar otra localidad. Esta separación se publica como instrucciones en los docstrings y requiere reiniciar el MCP tras modificarlos; la selección real de Jev debe verificarse con consultas de integración.
 
 `get_pronostico()` llama a las cuatro funciones en paralelo. Conserva cada fecha y valor, y devuelve `estado: Ok` mientras exista al menos un dato válido; cada fallo se indica como `sin_datos`. Si las fechas coinciden, publica una fecha común. Si difieren, conserva los horarios individuales, pone la fecha común en `null` y agrega una advertencia. Si las cuatro fallan, devuelve `estado: Error` y `status_code: 500` dentro del JSON de negocio; ese campo no cambia por sí solo el estado HTTP de MCP. La API reconoce el fallo como `error_mcp` y redacta la respuesta. Ver [configuración y contrato de MCP Clima](mcp_clima/README.md).
 
-`mejor_plato()` fue retirado del catálogo de Cocina para reducir su solapamiento con `es_mejor_plato`. Las descripciones deben distinguir verificación de un plato y comparación de dos platos, y coincidir con el código. Una respuesta negativa de la herramienta no la vuelve inaplicable. Las pruebas manuales mostraron que el solapamiento y la formulación pueden influir en Jev; no garantizan una selección estable para todo pedido ni que una confianza alta implique una decisión correcta.
+Autos y Cocina fueron retirados del flujo activo. Algunos tests conservan esos nombres como datos ficticios; no representan servidores que deban arrancarse ni se insertan mediante `crear_tabla_mcps()`.
 
 Jeveador lee todos los registros habilitados en cada petición y descubre catálogos secuencialmente. Si uno falla, aborta: no presenta una comparación incompleta. También envía a Jev el caso sin servidores habilitados o con catálogos vacíos para identificar la intención. Si el pedido es una consulta concreta y no hay herramientas, devuelve evaluaciones negativas; si es una consulta de capacidades, devuelve el catálogo vacío y la API informa que no tiene herramientas disponibles sin llamar a OpenAI para redactarlo.
 
 La API vuelve a descubrir antes de ejecutar. No hay caché local de catálogos ni conexiones MCP persistentes. Jeveador agrega `/mcp` a direcciones sin ruta; el cliente MCP de la API usa literalmente la URL recibida. Conviene registrar la URL completa en `mcps` para que ambos funcionen.
+
+### MCP Finanzas y Frankfurter
+
+El servidor local `mcp_finanzas` escucha en `http://127.0.0.1:8006/mcp`. Su cliente se conecta a `https://mcp.frankfurter.dev/` mediante Streamable HTTP, inicializa una sesión MCP y ejecuta la herramienta remota; no consulta directamente la API REST. Cierra el transporte y la sesión al terminar.
+
+| Herramienta local | Herramienta del MCP externo |
+| --- | --- |
+| `convertir_divisas` | `convert` |
+| `get_tipos_cambio` | `get_rates` |
+| `get_monedas` | `list_currencies` |
+| `get_proveedores` | `list_providers` |
+
+La conversión requiere importe positivo y ambas monedas con códigos ISO de tres letras. Las consultas de tipos requieren una moneda base. `fecha` permite solicitar un día histórico y `proveedor` una institución del catálogo; ambos son opcionales. No asumir qué moneda significa «pesos» si no se especifica el país o código.
+
+Se conserva la respuesta externa, priorizando `structuredContent` y luego texto JSON o texto. Las herramientas locales agregan `estado`, `respuesta`, `fuente` y el endpoint externo. El servicio entrega tipos de referencia, no precios de negociación en tiempo real; el último dato puede ser de un día anterior. Una conversión puede devolver solamente importe y moneda: no inventar fecha efectiva, tipo de cambio, impuestos ni comisiones que no estén en el resultado. No ofrece dólar blue, MEP, tarjeta, acciones ni operaciones financieras.
+
+Las operaciones internas devuelven `(True, datos)` o `(False, {"status_code": codigo})`. Las herramientas publican `estado: Error` cuando fallan: argumentos inválidos 400, fallo MCP o respuesta vacía 502, timeout 504, fallo HTTP externo con su código, y error interno local 500. El código en el JSON de negocio no modifica el HTTP del protocolo MCP. El plazo total de consulta externa es de 20 segundos.
+
+Ejemplos: «Convertí 100 USD a EUR», «dame el tipo de cambio de EUR a USD el 2024-06-03», «qué monedas hay disponibles» y «qué fuentes de tipos de cambio tenés». Ver [arranque, contratos y pruebas de Finanzas](mcp_finanzas/README.md).
 
 ## Páginas y administración
 
@@ -493,7 +530,7 @@ Esquema definido en código, no inspección de la base real. API y Jeveador usan
 | `url` | `TEXT NOT NULL` |
 | `habilitado` | `INTEGER NOT NULL DEFAULT 1`, admite 0 o 1 |
 
-Jeveador tiene una función explícita que crea la tabla e inserta Autos, Cocina y Clima habilitados solamente si no existe. Si ya existe, no repuebla ni reemplaza el catálogo. La página agrega servidores deshabilitados; la API busca por nombre y exige que esté habilitado.
+La función `crear_tabla_mcps()` de Jeveador crea la tabla e inserta `mcp_finanzas` con URL `http://127.0.0.1:8006/mcp` y `mcp_clima` con URL `http://localhost:8005/mcp`, ambos con `habilitado = 1`, solo cuando la tabla no existe. Si ya existe, conserva todos sus registros y no repuebla ni reemplaza el catálogo, incluso si está vacío. El esquema `sqlserver/esquema.sql` sigue creando un catálogo vacío; en ese camino se agregan los servidores desde la página. La API busca por nombre y exige que esté habilitado.
 
 ### Tabla `config_umbral`
 
@@ -511,7 +548,7 @@ La función de inicialización de Jeveador crea la tabla y el registro `id = 1`,
 | `codigo` | `INTEGER PRIMARY KEY` |
 | `descripcion` | `TEXT NOT NULL` |
 
-La función de inicialización de la API agrega 502, 503 y 504 faltantes sin reemplazar ediciones. `obtener_errores()` transforma filas al formato `responses` de FastAPI. El router `/chat` lee la tabla al importarse: debe existir antes de arrancar y sus cambios requieren reinicio para actualizar Swagger.
+La función de inicialización de la API agrega 502, 503 y 504 faltantes sin reemplazar ediciones. `obtener_errores()` transforma filas al formato `responses` de FastAPI. El catálogo se conserva por compatibilidad; la API ya no lo consulta al arrancar. `/chat/jev` declara sus respuestas HTTP en el router.
 
 ### Tabla `billing`
 
@@ -560,11 +597,11 @@ En `pagina/funciones.py` también existen dos clientes auxiliares de administrac
 
 ## Variables y arranque
 
-API, Jeveador, Página y MCP Clima cargan su configuración con `python-dotenv`. Las variables existentes en el proceso tienen prioridad en la carga actual. Clima carga el `.env` junto a `server.py` y valida que sus cuatro URLs no estén vacías. Se documentan nombres/defaults del código, no valores reales de `.env`.
+API, Jeveador, Página y MCP Clima cargan su configuración con `python-dotenv`. Las variables existentes en el proceso tienen prioridad en la carga actual. Clima carga el `.env` junto a `server.py` y valida que sus cuatro URLs no estén vacías. Finanzas no carga `.env` y desactiva la lectura automática de configuración local de FastMCP. Se documentan nombres/defaults del código, no valores reales de `.env`.
 
 | Servicio | Variable | Uso/default |
 | --- | --- | --- |
-| Página | `API_URL` | Endpoint completo de chat. |
+| Página | `API_URL` | Endpoint `/chat/jev`; admite URL base y migra la ruta anterior `/chat`. |
 | Página | `API_COSTOS_URL` | GET de consumos y totales: `/consultas_sql/costos`. |
 | Página | `API_MCPS_URL` | GET del catálogo y POST de altas: `/consultas_sql/mcps`. |
 | Página | `API_MCP_URL` | GET/PATCH/DELETE individual: `/consultas_sql/mcps/{id_mcp}`; conservar el marcador. |
@@ -577,14 +614,12 @@ API, Jeveador, Página y MCP Clima cargan su configuración con `python-dotenv`.
 | Los tres | `MAX_CONTEXTO` | Entero positivo; 20 si falta. Debe coincidir. |
 | API | `API_KEY` | Credencial OpenAI para chats con LLM. |
 | API | `MODELO_OPENAI` | Modelo; fallback `gpt-4.1-mini`. |
-| API | `MCP_AUTOS_URL` | MCP del chat original/rutas directas. Las directas tienen fallback local; `/chat` requiere configuración. |
-| API | `MAX_RONDAS` | Entero positivo obligatorio para `/chat`; no limita `/chat/jev`. |
 | API | `JEV_URL` | Dirección local de Jeveador, base o endpoint `/evaluar`. |
-| API | `CADENA` | Errores, catálogo y billing. |
+| API | `CADENA` | Catálogo MCP, umbral y billing; conserva el catálogo histórico de errores. |
 | Jeveador | `JEV_KEY` | Credencial OpenRouter. |
 | Jeveador | `JEV_URL` | Endpoint externo de decisiones, no API local. |
 | Jeveador | `JEV_MODELO` | Modelo del proveedor de decisiones. |
-| Jeveador | `CADENA` | Catálogo y billing. |
+| Jeveador | `CADENA` | Catálogo MCP, umbral y billing. |
 | Jeveador | `UMBRAL_DEFECTO` | Respaldo si falla `config_umbral`; 0.5 si no se convierte a decimal. |
 | MCP Clima | `TEMPERATURA_URL` | URL de pronóstico horario con `temperature_2m`; obligatoria. |
 | MCP Clima | `PRECIPITACIONES_URL` | URL de pronóstico horario con `precipitation_probability`; obligatoria. |
@@ -593,7 +628,20 @@ API, Jeveador, Página y MCP Clima cargan su configuración con `python-dotenv`.
 
 `JEV_URL` tiene significados distintos en API y Jeveador. Cambiar configuración requiere reiniciar el proceso que la consume; después de cambiar `MAX_CONTEXTO`, recargá también la página. En particular, las URLs administrativas se leen al importar `pagina/funciones.py`: si cambiás una, reiniciá Flask, no solamente la API. Las credenciales se leen del entorno y no se mandan al navegador.
 
-Desde la carpeta de cada componente, con su entorno virtual activado:
+### Orden de puesta en marcha
+
+1. Inicializá SQLite con [el esquema compartido](sqlserver/README.md) y configurá API, Jeveador, Página y las cuatro URLs de Clima. API y Jeveador deben apuntar a la misma base.
+2. En consolas separadas, arrancá Clima y Finanzas.
+3. Arrancá Jeveador en el puerto 8002, API en el 8001 y Página en el 8000.
+4. Desde la pantalla MCPs, agregá los siguientes servidores; el alta queda deshabilitada. Habilitalos cuando estén encendidos. Deshabilitá o eliminá los registros de Autos y Cocina si todavía aparecen.
+5. Abrí `http://127.0.0.1:8000/` y consultá «qué podés hacer», un pronóstico para CABA o una conversión entre monedas.
+
+| Nombre en el catálogo | URL local |
+| --- | --- |
+| `mcp_clima` | `http://127.0.0.1:8005/mcp` |
+| `mcp_finanzas` | `http://127.0.0.1:8006/mcp` |
+
+Desde la carpeta de cada componente, con su entorno virtual activado, los comandos son:
 
 ```powershell
 # Cada MCP en su propia consola/carpeta
@@ -609,7 +657,7 @@ uvicorn main:app --host 127.0.0.1 --port 8001 --reload --log-config logging.json
 python app.py
 ```
 
-Dependencias por componente: `api/reqs.txt`, `jeveador/reqs.txt` y los `requirements.txt` de página/MCP. Ver [arranque de API](api/COMO_ARRANCAR), [Jeveador](jeveador/COMOARRANCAR) y [página](pagina/COMOARRANCAR).
+Dependencias por componente: `api/reqs.txt`, `jeveador/reqs.txt` y los `requirements.txt` de Página, Clima y Finanzas. Los README individuales indican cómo instalar dependencias y usar el Python del venv existente: `api`, `jeveador`, `pagina`, `clima` y `mcp_finanzas`, respectivamente. Reiniciá API y Página después de actualizar las rutas.
 
 ## Archivos locales y backups
 
@@ -623,7 +671,7 @@ Los backups locales pueden conservarse para recuperar cambios, como `pagina/app.
 | --- | --- |
 | `api/main.py`, `api/routers/` | Aplicación y registro de rutas. |
 | `api/schemas/` | Contratos y validación. |
-| `api/funciones/chat_funciones.py` | Cliente MCP y chat original. |
+| `api/funciones/mcp_funciones.py` | Descubrimiento y ejecución MCP con URL explícita del catálogo. |
 | `api/funciones/chat_jev_funciones.py` | Evaluación, selección, catálogos, preparación y ejecución. |
 | `api/funciones/respuesta_jev_funciones.py` | Aclaraciones naturales y redacción del resultado. |
 | `api/funciones/openai_funciones.py` | Responses API y caché de prefijo. |
@@ -642,8 +690,10 @@ Los backups locales pueden conservarse para recuperar cambios, como `pagina/app.
 | `pagina/bases.py` | Módulo SQLite anterior, conservado y sin uso desde las rutas administrativas actuales. |
 | `pagina/templates/partials/modal_error.html`, `static/js/modal_error.js` | Modal compartido para fallos de llamadas administrativas. |
 | `pagina/templates/`, `static/` | Interfaz y contexto de navegador. |
-| `mcp_autos/server.py`, `mcp_cocina/server.py`, `mcp_clima/server.py` | Publicación de herramientas. |
+| `mcp_clima/server.py` | Publicación de herramientas. |
+| `mcp_finanzas/server.py`, `mcp_finanzas/funciones.py` | Herramientas financieras y cliente del MCP externo de Frankfurter; ver [arranque y contratos](mcp_finanzas/README.md). |
 | `mcp_clima/funciones.py` | GET compartido a Open-Meteo y combinación paralela del pronóstico, con resultados parciales y comparación de fechas. |
+| `api/tests/`, `jeveador/tests/`, `pagina/tests/`, `mcp_clima/tests/`, `mcp_finanzas/tests/` | Suites por componente, con datos ficticios, transporte simulado y bases temporales. |
 
 ## Límites y observabilidad
 
@@ -651,24 +701,26 @@ Los backups locales pueden conservarse para recuperar cambios, como `pagina/app.
 | --- | --- |
 | Página → API de chat | 200 segundos. |
 | Página → API SQL o administración auxiliar de Jev | 30 segundos por llamada. |
-| `/chat` o `/chat/jev` completo | 180 segundos. |
+| `/chat/jev` completo | 180 segundos. |
 | API → Jeveador | 60 segundos HTTP. |
 | OpenAI por llamada | 60 segundos HTTP; máximo solicitado de 1.200 tokens de salida. |
 | Consulta de catálogos y ejecución MCP individual | 30 segundos. |
+| MCP Finanzas → MCP Frankfurter | 20 segundos para conexión, inicialización, llamada y cierre. |
 | Ejecución de `get_pronostico` desde la API | 60 segundos; reúne cuatro consultas HTTP paralelas de hasta 30 segundos cada una. |
 | Jeveador → proveedor | 30 segundos. |
 | SQLite | 30 segundos de espera por bloqueo. |
 
 Los 30 segundos del proveedor no limitan todo `/evaluar`: los descubrimientos MCP ocurren antes. No hay reintentos automáticos ni respuestas progresivas. La API solicita `parallel_tool_calls: false`; `/chat/jev` ejecuta una herramienta como máximo por petición.
 
-Las rutas de chat de FastAPI usan 422 por entrada inválida, 503 por configuración/catálogo, 502 por servicios/respuestas y 504 por timeout. Un fallo de billing también puede causar 500. El chat de Flask valida entradas con 400 y traduce fallos de su cliente a 502. El router administrativo SQL conserva los códigos descritos en [su contrato](#contrato-de-funciones-y-respuestas-http); las páginas administrativas muestran fallos con HTTP 503 y modal, excepto el 404 de los listados, que se presenta como ausencia de información con HTTP 200.
+La ruta `/chat/jev` de FastAPI usa 422 por entrada inválida, 503 por configuración/catálogo, 502 por servicios/respuestas y 504 por timeout. Los fallos inesperados de coordinación, billing o construcción de la respuesta se registran y devuelven 500 con un detalle público genérico. El chat de Flask valida entradas con 400 y traduce fallos de su cliente a 502. El router administrativo SQL conserva los códigos descritos en [su contrato](#contrato-de-funciones-y-respuestas-http); las páginas administrativas muestran fallos con HTTP 503 y modal, excepto el 404 de los listados, que se presenta como ausencia de información con HTTP 200.
 
-`api/logging.json` conserva formatos y colores de Uvicorn para arranque/acceso. Los logs explícitos incluyen nivel, fecha/hora, archivo y línea. Los INFO salientes de HTTPX/HTTPcore/MCP se filtran. Jeveador registra una línea INFO por herramienta con MCP, nombre, decisión (`aplicable` o `no_aplicable`), `confidence` (o «no informada») y `probabilities` (o «no informadas»). No imprime el umbral en esa línea. Se retiraron las trazas temporales `JEV SOLICITUD` y `CHAT JEV` de selección/ejecución/resultados. El log conserva la decisión original; la aceptación exige además superar el umbral configurado. La confianza no se guarda en SQLite. Flask usa su logging propio.
+`api/logging.json` conserva formatos y colores de Uvicorn para arranque/acceso. Los logs explícitos incluyen nivel, fecha/hora, archivo y línea. Los INFO salientes de HTTPX/HTTPcore/MCP se filtran. Jeveador ya no emite el detalle INFO por herramienta con MCP, decisión, confianza y probabilidades. Se retiraron las trazas temporales `JEV SOLICITUD` y `CHAT JEV` de selección/ejecución/resultados. Las decisiones siguen procesándose y la aceptación exige superar el umbral configurado; quitar ese log no modifica el filtro ni el registro de consumo. La confianza no se guarda en SQLite. Flask usa su logging propio.
 
 En `api/funciones/billing.py`, el guardado está activo y no se imprime el diccionario de consumo. El resumen `logger.info` está comentado. El try/except de persistencia registra el traceback y vuelve a lanzar la excepción.
 
 ## Límites de la implementación y pendientes
 
+- Verificar en integración desde el chat la selección y la respuesta de las cuatro herramientas de Finanzas; sus pruebas locales y las consultas directas al MCP externo no prueban la coordinación completa de Jeveador.
 - Verificar en integración la selección de las cinco herramientas de Clima: preguntas generales y combinadas deben seleccionar `get_pronostico`, y pedidos de una sola variable su herramienta individual. Presión en superficie y pronóstico conjunto ya están implementados; la API ejecuta una llamada MCP y el agregador consulta sus cuatro funciones internas.
 - Crear un método en la API para recibir y guardar en una tabla los errores ocurridos. Integrar su llamada cada vez que se produzca un error en los componentes del sistema, incluido Jeveador. Debe conservar el componente de origen, fecha/hora, tipo de error, mensaje y traceback, sin credenciales ni secretos. Este registro de eventos está pendiente y es distinto del catálogo de descripciones de errores existente.
 - Persistir también los casos en los que el sistema no puede resolver el pedido por falta de herramientas aplicables o porque ninguna supera el umbral, incluida una recomendación de Jev sin herramientas aceptables. Su clasificación queda pendiente. Ya se registran en consola y se normalizan como resultados válidos (200 OK, sin MCP recomendado), con el mensaje de la API «No tengo las herramientas necesarias para responder tu pregunta». Queda pendiente integrarlos con el método y la tabla central de registro, conservando las inconsistencias para analizarlas.
@@ -683,16 +735,22 @@ En `api/funciones/billing.py`, el guardado está activo y no se imprime el dicci
 
 ## Verificación realizada
 
-Los cambios administrativos del 13 de octubre completaron **9 pruebas del router SQL** con SQLite temporal y **39 pruebas de la página y sus clientes** con HTTP simulado. Se verificaron los retornos `(resultado, salida)`, los ocho endpoints y su tag, los códigos HTTP y JSON de error, las escrituras, la paginación y los totales. En la página se probaron los 404 de listados sin tabla ni modal, los 404 de otras operaciones que sí muestran modal y la conservación del error de escritura cuando el listado posterior está vacío. Estas pruebas bloquearon u omitieron la carga de `.env`; no consultaron bases ni servicios reales. Este recuento corresponde a las suites focalizadas, no a todas las pruebas del proyecto.
+La modificación del router `/chat/jev` completó 80 pruebas de API. Se comprobó que preserve códigos, detalles y cabeceras de errores HTTP, registre `e`, devuelva 500 ante excepciones inesperadas y capture también fallos al construir la respuesta. Todo el procesamiento está dentro del `try` y el router devuelve las respuestas de fallo sin `raise`.
 
-La implementación del pronóstico conjunto completó 4 pruebas del agregador y 42 pruebas de coordinación/redacción de la API con dependencias simuladas, sin cargar `.env` ni consultar servicios reales. Incluye las 16 combinaciones de éxito/fallo de las cuatro variables, fechas distintas, excepciones, respuestas malformadas, éxito parcial y error total. La actualización de las descripciones posterior verificó la sintaxis; esta actualización documental cotejó las herramientas y sus contratos con el código sin volver a ejecutar las suites. Estas comprobaciones no garantizan la selección ni el texto exacto de los modelos en integración.
+Las últimas ejecuciones registradas por componente son:
 
-Se revisaron rutas, funciones, esquemas, MCP, cliente de página, JavaScript, templates, logging y dependencias. No se leyeron `.env` ni bases reales, ni se hicieron consultas pagas a proveedores.
+| Componente | Pruebas aprobadas | Alcance |
+| --- | ---: | --- |
+| API | 80 | Retiro de endpoints, contrato y errores de `/chat/jev`, SQL, MCP compartido, OpenAI, billing, contexto y redacción. |
+| Página | 40 | Chat, migración de URL a `/chat/jev`, contexto, clientes y administración. |
+| Jeveador | 47 | Catálogos, decisiones, umbral, errores y persistencia. |
+| MCP Clima | 22 | Cuatro variables, catálogo, pronóstico conjunto y resultados parciales. |
+| MCP Finanzas | 12 | Cliente externo simulado, validación, errores, timeout y MCP local en memoria. |
 
-Las pruebas focalizadas validan selección recomendada, ambigüedad y continuación natural, contexto, esquemas, MCP deshabilitado, redacción y contrato público. Las de Jeveador simulan HTTP y sustituyen la carga de `.env`; las de página omiten esa carga.
+Estos recuentos corresponden a las últimas ejecuciones de cada suite, no a una nueva corrida conjunta en esta revisión documental. Las 117 pruebas de API y Página se ejecutaron después de retirar `/chat`, `/mejor_auto` y `/es_mejor_auto` de la API; comprobaron que esas rutas devuelvan 404 y que Swagger publique únicamente `/chat/jev` y la administración SQL.
 
-Las verificaciones de las páginas Umbral y MCPs se realizaron con bases temporales ficticias: conversión porcentaje/decimal, habilitación, alta siempre deshabilitada, nombres duplicados, validación de URL, borrado confirmado mediante POST, tokens CSRF, registros ausentes y errores de acceso. No modificaron la base real. La revisión del README del 12 de octubre cotejó estas funciones y las rutas con el código; no ejecutó consultas reales a proveedores.
+Las suites están en `tests/` y se ejecutan desde cada componente con `python -m unittest discover -s tests -t . -v`, usando el venv correspondiente. Bloquean u omiten la carga de `.env`, simulan servicios externos y usan SQLite temporal. Las pruebas de billing comprueban el guardado sin exigir el resumen INFO desactivado; las de Clima usan los nombres actuales y las de Página no dependen de backups locales.
 
-Una revisión anterior completó 33 pruebas focalizadas de API y 32 de Jeveador, sin llamadas reales a proveedores. Incluyó una regresión de consulta general con comparación anterior en el contexto y la ausencia del log JSON de decisiones. Son resultados de esa ejecución, no un recuento actualizado de toda la suite. Estas pruebas verifican coordinación con respuestas simuladas, no garantizan las elecciones o el texto exacto de una LLM en producción.
+Finanzas también tuvo dos comprobaciones directas contra el MCP público de Frankfurter: catálogo de monedas y conversión histórica de USD a EUR. Ambas funcionaron. Esa conversión devolvió importe y moneda, sin fecha o tipo explícitos; se conservaron los datos tal como los entregó el servicio. Estas consultas directas no prueban la selección de Jeveador ni la redacción final del chat.
 
-La revisión completa inicial de API detectó dos pruebas que esperan el resumen `logging.info` de billing, actualmente comentado. Esa divergencia de consola no demuestra un fallo del guardado y se deja documentada, sin modificar billing. La integración real y las pruebas que carguen configuración local deben ejecutarse fuera de esta revisión.
+La modificación del router ejecutó las 80 pruebas de API con dependencias simuladas. Esta actualización de los README de API y general cotejó sus contratos con el router y verificó formato y enlaces; no volvió a ejecutar suites, cargar configuración local, arrancar servicios ni consultar proveedores.

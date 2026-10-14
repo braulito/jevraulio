@@ -480,6 +480,8 @@ Jeveador vuelve a consultar los servidores habilitados en cada pedido. Agregar, 
 
 ## SQLite
 
+El script [sqlserver/esquema.sql](sqlserver/esquema.sql) crea las cuatro tablas necesarias y carga las descripciones iniciales de errores y el umbral `0.85` cuando faltan. Ejecutalo manualmente sobre el archivo SQLite configurado en `CADENA`, antes de iniciar los servicios. Conserva las tablas y los valores existentes y puede repetirse sin duplicar los datos iniciales; no migra esquemas anteriores. El catálogo MCP queda vacío en una base nueva: agregá los servidores desde la página MCPs y habilitalos cuando estén disponibles.
+
 Esquema definido en código, no inspección de la base real. API y Jeveador usan consultas parametrizadas y conexiones con commit, rollback y cierre. El módulo administrativo de la API usa `mode=ro` para leer y `mode=rw` para guardar el umbral o administrar MCPs; ambos requieren un archivo existente y evitan crear una base por error. Flask consume JSON de la API. `sqlite3` viene con Python.
 
 ### Tabla `mcps`

@@ -1,34 +1,46 @@
 # MCP Finanzas
 
-Servidor FastMCP basado en la estructura de mcp_clima, que actúa como cliente de un MCP externo: [Frankfurter](https://frankfurter.dev/es/mcp/). No llama directamente a su API REST. La cadena es:
+Servidor FastMCP local que actúa como cliente del MCP externo de Frankfurter. No consulta directamente su API REST. Publica cuatro herramientas de divisas y conserva los datos del proveedor.
 
-Chat con Jeveador → MCP Finanzas local → MCP Frankfurter → datos de tipos de referencia.
+Flujo: Página → API → MCP Finanzas local → MCP Frankfurter. Jeveador evalúa previamente si sus capacidades corresponden al pedido; la API autoriza y ejecuta.
 
-## Arranque
+## Arranque y configuración
 
-Desde esta carpeta, en PowerShell:
+Desde mcp_finanzas/, con Python 3.10 o superior, en PowerShell:
 
-```powershell
+~~~powershell
+# Crear el entorno solo la primera vez.
 python -m venv mcp_finanzas
 .\mcp_finanzas\Scripts\python.exe -m pip install -r requirements.txt
 .\mcp_finanzas\Scripts\python.exe server.py
-```
+~~~
 
-Endpoint local: **http://127.0.0.1:8006/mcp**, con Streamable HTTP y respuestas JSON.
-Endpoint externo: **https://mcp.frankfurter.dev/**. No requiere clave ni registro según su documentación. Este componente no carga archivos .env; la carga automática de FastMCP está desactivada.
+| Dirección | Uso |
+| --- | --- |
+| http://127.0.0.1:8006/mcp | Servidor local, Streamable HTTP con respuestas JSON. |
+| https://mcp.frankfurter.dev/ | MCP externo consultado por este componente. |
 
-En la pantalla MCPs de JEV, agregá nombre **mcp_finanzas** y URL **http://127.0.0.1:8006/mcp**. El alta queda deshabilitada: habilitala después de arrancar el servidor. API y Jeveador descubren las herramientas mediante el catálogo existente, sin agregar rutas de chat. No se registra automáticamente ni se modifica la base real.
+El componente no carga archivos de entorno ni requiere una clave de OpenAI/OpenRouter. La carga automática de FastMCP está desactivada. El destino externo está definido en funciones.py. Las llamadas necesitan conectividad con Frankfurter; el servidor local puede arrancar aunque el proveedor esté indisponible.
+
+## Incorporación a JEVraulio
+
+1. Revisar las herramientas y arrancar el servidor.
+2. Comprobar que [destinos_mcp.json de Jeveador](../jeveador/destinos_mcp.json) autorice http://127.0.0.1:8006/mcp.
+3. Comprobar que [politica_mcp.json de API](../api/politica_mcp.json) autorice el nombre mcp_finanzas, ese destino y las herramientas aprobadas.
+4. Desde la pantalla MCPs o la administración SQL de la API, agregar el nombre mcp_finanzas y la URL completa, si no existen. Un alta administrativa queda deshabilitada; habilitarla con el servidor disponible.
+
+Las políticas actuales incluyen este MCP y sus cuatro herramientas. No se registra automáticamente al arrancar, ni modifica la base compartida. API y Jeveador descubren el catálogo sin agregar rutas de chat. Una herramienta futura requiere aprobación explícita en la política de la API, aunque ya aparezca en el catálogo.
 
 ## Herramientas
 
-| Herramienta local | Herramienta remota | Uso |
+| Herramienta local | Herramienta remota | Argumentos |
 | --- | --- | --- |
-| convertir_divisas | convert | Importe positivo, monedas de origen/destino, fecha y proveedor opcionales. |
-| get_tipos_cambio | get_rates | Moneda base, destinos separados por comas, fecha y proveedor opcionales. |
-| get_monedas | list_currencies | Códigos ISO y nombres admitidos, sin argumentos. |
-| get_proveedores | list_providers | Instituciones, claves y cobertura disponibles, sin argumentos. |
+| convertir_divisas | convert | importe positivo, moneda_origen y moneda_destino; fecha y proveedor opcionales. |
+| get_tipos_cambio | get_rates | moneda_base; monedas_destino separadas por comas, fecha y proveedor opcionales. Omitir destinos consulta todos los disponibles. |
+| get_monedas | list_currencies | Sin argumentos. |
+| get_proveedores | list_providers | Sin argumentos. |
 
-Ejemplos de preguntas para el chat:
+Ejemplos para el chat:
 
 - «¿Cuántos euros son 100 dólares estadounidenses?»
 - «Convertí 250 EUR a USD el 2024-06-03.»
@@ -36,41 +48,79 @@ Ejemplos de preguntas para el chat:
 - «¿Qué monedas podés convertir?»
 - «¿Qué fuentes de tipos de cambio hay disponibles?»
 
-Los códigos se normalizan a mayúsculas. Una fecha debe ser una fecha válida en formato YYYY-MM-DD. La compatibilidad de una moneda, fecha o institución la determina Frankfurter: no se supone que todo código de tres letras esté soportado. Si falta importe o moneda, el chat debe pedir aclaración; no asumir una moneda para la palabra «pesos».
+Los códigos de moneda se normalizan a mayúsculas y deben tener tres letras. Esto valida el formato; Frankfurter determina qué monedas soporta. La fecha debe ser válida y tener formato YYYY-MM-DD. El proveedor opcional usa la clave de institución devuelta por get_proveedores.
 
-Son tipos de referencia; el último disponible puede corresponder a un día anterior. Mantener la fecha efectiva de cada dato y las unidades devueltas. No ofrece dólar blue, MEP, tarjeta, acciones, criptomonedas, operaciones, pronósticos ni recomendaciones de inversión. No admite rangos históricos: el MCP externo permite una fecha por consulta. [Alcance del servidor oficial](https://github.com/lineofflight/frankfurter-mcp).
+Si faltan datos, la API debe pedir aclaración antes de ejecutar. No asumir una moneda concreta para «pesos». Para consultar solo un tipo corresponde get_tipos_cambio; para convertir un importe, convertir_divisas.
 
 ## Contratos y errores
 
-Las operaciones de consultar_frankfurter devuelven (True, datos) o (False, {"status_code": código}). Cada llamada abre el transporte, inicializa ClientSession, ejecuta call_tool y cierra sesión y transporte; el servidor local puede arrancar aunque Frankfurter esté caído.
+consultar_frankfurter devuelve (True, datos) o (False, {"status_code": codigo}). Cada llamada abre transporte, inicializa ClientSession, ejecuta call_tool y cierra los recursos.
 
-Las herramientas públicas mantienen el contrato que reconoce JEV:
+Las herramientas adaptan ese retorno a un JSON de negocio. Ejemplo ilustrativo:
 
-```json
-{"estado": "Ok", "respuesta": {"datos": "respuesta original del MCP externo"}, "fuente": "Frankfurter", "mcp_externo": "https://mcp.frankfurter.dev/"}
-```
+~~~json
+{
+  "estado": "Ok",
+  "respuesta": {"datos": "respuesta original del MCP externo"},
+  "fuente": "Frankfurter",
+  "mcp_externo": "https://mcp.frankfurter.dev/"
+}
+~~~
 
-Este JSON es ilustrativo: respuesta conserva los datos originales, sin imponer un esquema de resultado no garantizado por el proveedor. Se prioriza structuredContent; si no existe, se decodifica el texto JSON o se conserva el texto. Se mantienen las fechas y el redondeo del servicio remoto.
+respuesta conserva la estructura del proveedor: se prioriza structuredContent; si falta, se intenta decodificar el texto JSON o se conserva el texto. No se agregan fechas, tipos de cambio ni campos que el proveedor no haya entregado.
 
-Un fallo publica estado='Error', respuesta genérica y status_code. Argumentos locales inválidos: 400; fallo de herramienta MCP o respuesta vacía: 502; timeout: 504; fallo HTTP externo: su código HTTP; fallo interno de la herramienta local: 500. El campo status_code pertenece al JSON de negocio y no modifica el HTTP del protocolo MCP. Las validaciones del esquema MCP pueden rechazar argumentos antes de ejecutar la función, con isError. Los bloques except capturan la excepción como e y la incluyen en logger.error mediante %s, junto con el contexto del fallo. No se registran explícitamente argumentos ni cuerpos externos; los mensajes de excepción tampoco deben contener credenciales ni secretos.
+Ejemplo de fallo:
 
-El timeout total es 20 segundos, incluyendo inicialización y cierre. Cabe dentro de los 30 segundos del cliente de JEV. No hay reintentos ni llamadas adicionales a LLM.
+~~~json
+{
+  "estado": "Error",
+  "respuesta": "No se pudo completar la consulta financiera",
+  "status_code": 504
+}
+~~~
+
+| Código de negocio | Situación |
+| --- | --- |
+| 400 | Argumentos inválidos. |
+| 502 | Fallo de comunicación/herramienta o respuesta vacía. |
+| 504 | Tiempo de espera agotado. |
+| Código HTTP externo | Rechazo HTTP del proveedor, conservando su código. |
+| 500 | Fallo interno de la herramienta local. |
+
+status_code pertenece al JSON de negocio y no modifica por sí solo el HTTP del protocolo MCP. El esquema MCP también puede rechazar argumentos antes de ejecutar la función mediante isError. La API reconoce los errores de negocio y conserva su contrato público de chat.
+
+Los fallos se registran con contexto y detalle de excepción; no se vuelcan explícitamente argumentos ni cuerpos externos.
+
+## Límites
+
+- Ofrece tipos de referencia, no precios de compraventa en tiempo real. El último dato puede corresponder a un día anterior.
+- Conservar las monedas, unidades, fecha efectiva y redondeo que informe la fuente.
+- No realiza transferencias, no incluye comisiones y no consulta dólar blue, MEP, tarjeta, acciones o criptomonedas.
+- No predice ni recomienda inversiones. Las consultas históricas admiten una fecha por llamada, sin rangos.
+- La disponibilidad de moneda, fecha e institución depende del proveedor.
+- El plazo total es de 20 segundos, incluyendo inicialización y cierre; la API permite 30 segundos para estas herramientas. No hay reintentos, caché ni llamadas propias a LLM.
+
+Los permisos locales de API/Jeveador controlan el acceso a este servidor; no restringen su consulta interna a Frankfurter ni equivalen a autenticación propia del MCP. Los resultados externos quedan sujetos a los controles de estructura y tamaño de la API antes de la redacción.
 
 ## Organización
 
-| Archivo o carpeta | Contenido |
+| Ubicación | Responsabilidad |
 | --- | --- |
-| server.py | Servidor local y cuatro herramientas. |
-| funciones.py | Cliente del MCP externo, validación y errores. |
+| server.py | FastMCP local y cuatro herramientas. |
+| funciones.py | Cliente remoto, normalización, validación y errores. |
 | requirements.txt | Dependencias. |
-| tests/ | Cliente remoto simulado y servidor MCP en memoria. |
+| tests/test_finanzas.py | Cliente simulado y servidor MCP en memoria. |
 
 ## Pruebas
 
-```powershell
+Desde mcp_finanzas/:
+
+~~~powershell
 .\mcp_finanzas\Scripts\python.exe -m unittest discover -s tests -t . -v
-```
+~~~
 
-La suite simula transporte y sesión externos, sin red ni archivos .env. Comprueba inicialización y cierre, traducción de argumentos, JSON/texto/structuredContent, errores, timeout, entradas inválidas y descubrimiento/ejecución del servidor local con MCP en memoria. La selección de Jeveador y el servicio real requieren una comprobación de integración aparte.
+La suite simula transporte y sesión externos, sin red ni archivos de entorno. Comprueba inicialización/cierre, traducción de argumentos, JSON/texto/structuredContent, errores, timeout, entradas inválidas y descubrimiento/ejecución en memoria.
 
-Verificación realizada: las 12 pruebas de la suite pasaron. También se comprobaron dos llamadas reales al MCP público: catálogo de monedas y conversión histórica de USD a EUR. Ambas devolvieron estado Ok. En esa conversión, Frankfurter devolvió un objeto con amount y currency, sin fecha ni tipo de cambio explícitos: no se agregan datos que el proveedor no entrega. La integración con la selección de Jeveador todavía no se probó.
+La verificación previa documentada de esta suite fue de 12 pruebas aprobadas. Los [informes de integración](../resultados_pruebas/index.html) registran además una conversión real de 100 USD a EUR a través de API y Jeveador, aprobada. Esa prueba no verifica todos los pares, fechas ni herramientas del proveedor. Esta actualización documental no volvió a ejecutar pruebas ni consultas externas.
+
+Volver al [README general](../README.md).

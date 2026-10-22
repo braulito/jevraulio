@@ -1,0 +1,32 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Formato http en todos los estados</title><style>
+*{box-sizing:border-box}body{margin:0;background:#f5f7fb;color:#172339;font:16px/1.65 system-ui,sans-serif}
+main{max-width:1120px;margin:auto;padding:40px 24px}a{color:#145bc2}h1{font-size:clamp(26px,4vw,38px);line-height:1.25}
+h2{font-size:20px;margin-top:0}.muted{color:#617087}.card{background:white;border:1px solid #dfe5ef;border-radius:14px;padding:24px;margin:20px 0}
+.badge{display:inline-block;border-radius:20px;padding:5px 14px;font-size:13px;font-weight:700;background:#e7edf8;color:#214a89}
+.APROBADA{background:#dcf5e6;color:#155c33}.FALLIDA,.ERROR{background:#ffe3e3;color:#9c2222}.OMITIDA{background:#fff0ce;color:#805800}
+pre{overflow:auto;padding:18px;background:#111c30;color:#e1eaff;border-radius:10px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}
+code{font-family:Consolas,monospace}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px;border-bottom:1px solid #e5eaf2;vertical-align:top}
+th{color:#59697f;font-size:13px}input{width:100%;padding:12px;border:1px solid #c4cede;border-radius:8px;font:inherit}details summary{cursor:pointer;color:#145bc2}
+.stats{display:flex;gap:12px;flex-wrap:wrap}.stats .card{flex:1;min-width:150px}.number{display:block;font-size:30px;font-weight:750}
+@media(max-width:650px){main{padding:22px 12px}.card{padding:16px}table{font-size:13px}th,td{padding:8px}.componente{display:none}}
+</style></head><body><main><a href="index.html">← Índice de pruebas</a><h1>Formato http en todos los estados</h1><span class="badge APROBADA">APROBADA</span> <span class="badge">Aislada / simulada</span><p class="muted">2026-10-21T20:52:20-03:00 · 0.047 segundos · api</p><section class="card"><h2>Qué se probó</h2><p>Formato http en todos los estados.</p></section><section class="card"><h2>Resultado esperado</h2><p>Todas las aserciones de esta prueba deben cumplirse; los casos de rechazo deben conservar su código de error.</p></section><section class="card"><h2>Alcance de esta evidencia</h2><p>Servicios HTTP, LLM y catálogos se simulan; SQLite y políticas se prueban con archivos temporales. Esto verifica el código y no demuestra inmunidad del modelo ante todos los ataques.</p></section><section class="card"><h2>Resultado obtenido</h2><pre>La prueba finalizó sin errores ni aserciones fallidas.</pre></section><details class="card"><summary>Código exacto de la prueba</summary><pre>    def test_formato_http_en_todos_los_estados(self):
+        archivo = Path(__file__).resolve().parents[1] / &quot;routers/chat_jev.py&quot;
+        arbol = ast.parse(archivo.read_text(encoding=&quot;utf-8&quot;))
+        arbol.body = [n for n in arbol.body if not isinstance(n, (ast.Import, ast.ImportFrom))]
+        responder = AsyncMock()
+        contexto = {&quot;logging&quot;: logging, &quot;__name__&quot;: &quot;prueba_chat_jev&quot;, &quot;HTTPException&quot;: HTTPException, &quot;JSONResponse&quot;: JSONResponse, &quot;APIRouter&quot;: APIRouter, &quot;RespuestaChat&quot;: RespuestaChat,
+                    &quot;ConsultaChatJev&quot;: ConsultaChatJev, &quot;responder_chat_jev&quot;: responder}
+        exec(compile(arbol, str(archivo), &quot;exec&quot;), contexto)
+        app = FastAPI()
+        app.include_router(contexto[&quot;router&quot;])
+        with TestClient(app) as cliente:
+            for estado in (&quot;Ok&quot;, &quot;sin_coincidencias&quot;, &quot;seleccion_requerida&quot;, &quot;requiere_aclaracion&quot;, &quot;error_mcp&quot;):
+                with self.subTest(estado=estado):
+                    responder.return_value = RespuestaChatJev(estado=estado, respuesta=&quot;Mensaje&quot;, evaluaciones=[], herramientas=[&quot;mejor_auto&quot;] if estado == &quot;Ok&quot; else [])
+                    respuesta = cliente.post(&quot;/chat/jev&quot;, json={&quot;mensaje&quot;: &quot;pedido&quot;})
+                    self.assertEqual(respuesta.status_code, 200)
+                    self.assertEqual(respuesta.json(), {
+                        &quot;estado&quot;: &quot;Ok&quot;, &quot;respuesta&quot;: &quot;La herramienta informó un error: Mensaje&quot; if estado == &quot;error_mcp&quot; else &quot;Mensaje&quot;,
+                        &quot;herramientas&quot;: [&quot;mejor_auto&quot;] if estado == &quot;Ok&quot; else [],
+                    })
+</pre></details><p class="muted">Identificador: <code>api.tests.test_chat_jev.ContratoClienteTests.test_formato_http_en_todos_los_estados</code></p></main></body></html>

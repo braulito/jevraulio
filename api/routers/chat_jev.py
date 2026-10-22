@@ -16,7 +16,8 @@ logger = logging.getLogger(__name__)
 @router.post("/chat/jev", response_model=RespuestaChat,
              summary="Consultar capacidades o resolver un pedido con Jeveador",
              description="Jeveador identifica la intención. La API describe las capacidades de los MCP habilitados o coordina la ejecución de una herramienta para una consulta concreta.",
-             responses={500: {"description": "Error interno al procesar la respuesta del chat."},
+             responses={403: {"description": "Destino o herramienta MCP sin permiso en la política local."},
+                        500: {"description": "Error interno al procesar la respuesta del chat."},
                         502: {"description": "Respuesta inválida o fallo de un servicio."},
                         503: {"description": "Configuración o catálogo no disponible."},
                         504: {"description": "Tiempo de espera agotado."}})

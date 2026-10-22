@@ -1,0 +1,12 @@
+{
+  "mcps": {
+    "mcp_clima": {
+      "url": "http://127.0.0.1:8005/mcp",
+      "herramientas": ["get_temperatura", "get_precipitaciones", "get_sensacion_termica", "get_presion", "get_pronostico"]
+    },
+    "mcp_finanzas": {
+      "url": "http://127.0.0.1:8006/mcp",
+      "herramientas": ["convertir_divisas", "get_tipos_cambio", "get_monedas", "get_proveedores"]
+    }
+  }
+}

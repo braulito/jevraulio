@@ -1,0 +1,19 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Timeout jev</title><style>
+*{box-sizing:border-box}body{margin:0;background:#f5f7fb;color:#172339;font:16px/1.65 system-ui,sans-serif}
+main{max-width:1120px;margin:auto;padding:40px 24px}a{color:#145bc2}h1{font-size:clamp(26px,4vw,38px);line-height:1.25}
+h2{font-size:20px;margin-top:0}.muted{color:#617087}.card{background:white;border:1px solid #dfe5ef;border-radius:14px;padding:24px;margin:20px 0}
+.badge{display:inline-block;border-radius:20px;padding:5px 14px;font-size:13px;font-weight:700;background:#e7edf8;color:#214a89}
+.APROBADA{background:#dcf5e6;color:#155c33}.FALLIDA,.ERROR{background:#ffe3e3;color:#9c2222}.OMITIDA{background:#fff0ce;color:#805800}
+pre{overflow:auto;padding:18px;background:#111c30;color:#e1eaff;border-radius:10px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}
+code{font-family:Consolas,monospace}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px;border-bottom:1px solid #e5eaf2;vertical-align:top}
+th{color:#59697f;font-size:13px}input{width:100%;padding:12px;border:1px solid #c4cede;border-radius:8px;font:inherit}details summary{cursor:pointer;color:#145bc2}
+.stats{display:flex;gap:12px;flex-wrap:wrap}.stats .card{flex:1;min-width:150px}.number{display:block;font-size:30px;font-weight:750}
+@media(max-width:650px){main{padding:22px 12px}.card{padding:16px}table{font-size:13px}th,td{padding:8px}.componente{display:none}}
+</style></head><body><main><a href="index.html">← Índice de pruebas</a><h1>Timeout jev</h1><span class="badge APROBADA">APROBADA</span> <span class="badge">Aislada / simulada</span><p class="muted">2026-10-21T20:52:19-03:00 · 0.031 segundos · jeveador</p><section class="card"><h2>Qué se probó</h2><p>Timeout jev.</p></section><section class="card"><h2>Resultado esperado</h2><p>Todas las aserciones de esta prueba deben cumplirse; los casos de rechazo deben conservar su código de error.</p></section><section class="card"><h2>Alcance de esta evidencia</h2><p>Servicios HTTP, LLM y catálogos se simulan; SQLite y políticas se prueban con archivos temporales. Esto verifica el código y no demuestra inmunidad del modelo ante todos los ataques.</p></section><section class="card"><h2>Resultado obtenido</h2><pre>La prueba finalizó sin errores ni aserciones fallidas.</pre></section><details class="card"><summary>Código exacto de la prueba</summary><pre>    async def test_timeout_jev(self):
+        with patch.dict(&quot;os.environ&quot;, ENTORNO, clear=True), patch(&quot;httpx.AsyncClient&quot;) as constructor:
+            constructor.return_value.__aenter__.return_value.post = AsyncMock(side_effect=httpx.ReadTimeout(&quot;detalle privado&quot;))
+            with self.assertRaises(HTTPException) as error:
+                await jev_funciones.consultar_jev(ConsultaJev(mensaje=&quot;Hola&quot;), CATALOGOS, &quot;clave-ficticia&quot;)
+        self.assertEqual(error.exception.status_code, 504)
+        self.assertNotIn(&quot;detalle privado&quot;, error.exception.detail)
+</pre></details><p class="muted">Identificador: <code>jeveador.tests.test_jev.TestFunciones.test_timeout_jev</code></p></main></body></html>

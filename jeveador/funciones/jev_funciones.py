@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from funciones.billing import registrar_uso_jev
+from funciones.catalogo_validaciones import validar_catalogos, validar_registros_mcps
 from funciones.bases_sqlite import obtener_mcps, obtener_umbral
 from funciones.mcp_funciones import obtener_herramientas_mcp
 from schemas.jev import ComparacionJev, ConsultaJev, EvaluacionJev, RespuestaJev
@@ -77,10 +78,9 @@ def construir_preguntas(catalogos: list[dict]) -> dict:
         return preguntas
     candidatos = {"ninguno": "Sin herramientas pertinentes o intención ambigua entre varios MCP."}
     for indice, catalogo in enumerate(catalogos):
-        nombre = catalogo["nombre"]
-        candidatos[f"mcp_{indice}"] = nombre
+        candidatos[f"mcp_{indice}"] = f"El MCP de state.mcps[{indice}] es el más adecuado."
         preguntas[f"cobertura_{indice}"] = {
-            "type": "choice", "instructions": f"Aplicá state.reglas. Evaluá solo state.mcps[{indice}] ({nombre}).", "criteria": CRITERIOS,
+            "type": "choice", "instructions": f"Aplicá state.reglas. Evaluá solo state.mcps[{indice}].", "criteria": CRITERIOS,
         }
         for numero, herramienta in enumerate(catalogo["herramientas"]):
             preguntas[f"herramienta_{indice}_{numero}"] = {
@@ -201,6 +201,10 @@ def interpretar_respuesta(respuesta: RespuestaJev, catalogos: list[dict], umbral
 
 
 async def consultar_jev(consulta: ConsultaJev, catalogos: list[dict], api_key: str) -> ComparacionJev:
+    resultado, salida = validar_catalogos(catalogos)
+    if not resultado:
+        raise HTTPException(status_code=salida["status_code"], detail="Catálogo MCP inválido o fuera de los límites permitidos. Revisá el log local.")
+    catalogos = salida
     url = os.getenv("JEV_URL", "").strip()
     modelo = os.getenv("JEV_MODELO", "").strip()
     if not url:
@@ -268,6 +272,10 @@ async def evaluar_mensaje(consulta: ConsultaJev) -> ComparacionJev:
         mcps = await anyio.to_thread.run_sync(obtener_mcps)
     except sqlite3.Error:
         raise HTTPException(status_code=503, detail="No se pudo leer la tabla mcps. Revisá CADENA y creá la tabla localmente.") from None
+    resultado, salida = validar_registros_mcps(mcps)
+    if not resultado:
+        raise HTTPException(status_code=salida["status_code"], detail="Registro MCP inválido: revisá nombres, duplicados, URLs y cantidad de servidores en la tabla mcps.")
+    mcps = salida
     catalogos = []
     for mcp in mcps:
         if not mcp["habilitado"]:

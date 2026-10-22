@@ -1,103 +1,168 @@
-# API de Jevraulio
+# API de JEVraulio
 
-Servicio FastAPI que coordina el chat, descubre y ejecuta herramientas MCP, consulta Jeveador y usa OpenAI para preparar argumentos y redactar respuestas. También publica la administración SQL que consume la página. La evaluación de capacidades corresponde a Jeveador; la ejecución corresponde a esta API.
+Servicio FastAPI que recibe las consultas del chat, pide a Jeveador que evalúe los MCP habilitados y coordina la ejecución. Usa OpenAI para preparar argumentos, pedir aclaraciones y redactar respuestas. También publica la administración de SQLite que consume la página.
+
+Jeveador recomienda; esta API autoriza y ejecuta. La recomendación del modelo no concede permisos.
 
 ## Arranque
 
-Desde esta carpeta, en PowerShell, con Python 3.10 o superior:
+Desde `api/`, con Python 3.10 o superior, en PowerShell:
 
-```powershell
-# Solo si todavía no existe el entorno.
+~~~powershell
+# Crear el entorno solo la primera vez.
 python -m venv api
 .\api\Scripts\python.exe -m pip install -r reqs.txt
 .\api\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8001 --reload --log-config logging.json
-```
+~~~
 
-API: http://127.0.0.1:8001. Swagger: http://127.0.0.1:8001/docs.
-Para el chat con Jeveador, arrancá también Jeveador y los MCP habilitados. Las rutas administrativas requieren la base SQLite, pero no llamadas a OpenAI.
+Con el entorno activado se puede usar directamente `uvicorn main:app --host 127.0.0.1 --port 8001 --reload --log-config logging.json`.
+
+- Servicio: http://127.0.0.1:8001.
+- Swagger: http://127.0.0.1:8001/docs.
+- El chat necesita Jeveador, los MCP habilitados y los proveedores utilizados por cada consulta.
+- La administración SQL necesita la base existente, sin llamadas a los modelos.
 
 ## Configuración
 
-Los módulos cargan el archivo local de configuración junto al componente con python-dotenv. Configurá estos nombres localmente; las credenciales no se envían al navegador ni se publican en documentación.
+La configuración local se carga automáticamente con python-dotenv; no se indica su ruta en el comando de arranque. Preparar localmente estas variables, sin publicar sus valores:
 
-| Variable | Uso |
+| Variable | Responsabilidad |
 | --- | --- |
-| API_KEY | Credencial de OpenAI para los chats con LLM. |
-| MODELO_OPENAI | Modelo; fallback gpt-4.1-mini. |
-| JEV_URL | Dirección local de Jeveador, base o endpoint completo /evaluar. |
-| CADENA | Ruta SQLite compartida con Jeveador; una ruta relativa se resuelve desde api. |
-| MAX_CONTEXTO | Máximo de mensajes de contexto; 20 por defecto. Igual en API, Jeveador y Página. |
+| API_KEY | Credencial de OpenAI. |
+| MODELO_OPENAI | Modelo para preparación y redacción; fallback gpt-4.1-mini. |
+| JEV_URL | URL **local de Jeveador**, base o endpoint completo /evaluar. |
+| CADENA | Ruta de la base SQLite compartida. Usar la misma ruta absoluta en API y Jeveador. |
+| MAX_CONTEXTO | Máximo de mensajes de contexto, 20 por defecto. Mantenerlo igual en Página y Jeveador. |
 
-Usá la misma ruta absoluta de CADENA en API y Jeveador. La base debe tener las tablas de [sqlserver](../sqlserver/README.md). El arranque ya no consulta la tabla errores: las descripciones de /chat/jev se declaran en su router. Reiniciá el servicio después de cambiar configuración.
+Las rutas relativas de SQLite se interpretan desde el componente. La estructura e inicialización están en [sqlserver](../sqlserver/README.md). La administración abre una base existente: no crea una base vacía para reemplazar una ruta incorrecta. Reiniciar el servicio después de cambiar variables de configuración.
 
-## Rutas y flujo
+Además, [politica_mcp.json](politica_mcp.json) define los destinos y herramientas autorizados. Es configuración local sin credenciales y se relee en cada comprobación.
 
-| Ruta | Responsabilidad |
+## Chat: POST /chat/jev
+
+~~~json
+{
+  "mensaje": "Convertí 100 USD a EUR",
+  "contexto": []
+}
+~~~
+
+El mensaje debe tener entre 1 y 10000 caracteres y no puede contener solo espacios. El contexto es opcional: lista de mensajes no vacíos de hasta 10000 caracteres cada uno, limitada por MAX_CONTEXTO. El campo opcional mcp permite indicar la selección cuando hay varias coincidencias; no evita la evaluación ni las comprobaciones de permisos.
+
+El flujo es:
+
+1. Consultar POST /evaluar de Jeveador con mensaje y contexto.
+2. Si se preguntan capacidades, describir el catálogo actual sin ejecutar herramientas.
+3. Para una consulta concreta, comprobar la recomendación y las herramientas aceptadas. Pedir aclaración o selección si corresponde.
+4. Volver a descubrir el catálogo, comprobar permisos y preparar argumentos. Validarlos contra el JSON Schema de la herramienta.
+5. Comprobar nuevamente la autorización justo antes de ejecutar **como máximo una herramienta**.
+6. Validar el resultado y redactar la respuesta final con el modelo sin herramientas disponibles.
+
+La respuesta pública conserva este contrato:
+
+~~~json
+{
+  "estado": "Ok",
+  "respuesta": "Texto de respuesta; puede contener Markdown.",
+  "herramientas": ["convertir_divisas"]
+}
+~~~
+
+Una aclaración, una descripción de capacidades o un pedido fuera de alcance devuelve HTTP 200 y herramientas vacías. Cuando no hay herramientas se informa: «No tengo las herramientas necesarias para responder tu pregunta». La falta de capacidades es un resultado válido.
+
+Los estados de coordinación internos no se publican como estados adicionales del chat. Si un MCP informa un error de negocio, se conserva HTTP 200 y estado Ok, con el texto precedido por «La herramienta informó un error: ».
+
+## Administración SQL
+
+Todas estas rutas usan el sobre {"resultado": true, "salida": datos}. Ante un fallo conservan el HTTP correspondiente y devuelven {"resultado": false, "salida": {"status_code": codigo}}, incluida la validación HTTP 422.
+
+| Método y ruta | Entrada / comportamiento |
 | --- | --- |
-| POST /chat/jev | Consulta Jeveador, selecciona MCP y herramienta, valida argumentos, ejecuta y redacta. |
-| GET /consultas_sql/costos | Consumos paginados, filtros y totales. |
-| GET/POST /consultas_sql/mcps | Listar o dar de alta MCP, siempre deshabilitado al crear. |
-| GET/PATCH/DELETE /consultas_sql/mcps/{id_mcp} | Consultar, cambiar habilitación o borrar un registro. |
-| GET/PUT /consultas_sql/umbral | Consultar o guardar el umbral decimal. |
+| GET /consultas_sql/costos | pagina=1, pagina_size=50, mostrar_jev=true, mostrar_openai=true. Registros, paginación y totales. |
+| GET /consultas_sql/mcps | Todos los MCP, habilitados y deshabilitados. |
+| POST /consultas_sql/mcps | {"nombre":"mcp_ejemplo","url":"http://127.0.0.1:8010/mcp"}. Crea **deshabilitado**, HTTP 201. |
+| GET /consultas_sql/mcps/{id_mcp} | Consulta por ID positivo. |
+| PATCH /consultas_sql/mcps/{id_mcp} | {"habilitado":1} o {"habilitado":0}. |
+| DELETE /consultas_sql/mcps/{id_mcp} | Borra el registro. |
+| GET /consultas_sql/umbral | Lee id=1 de config_umbral. |
+| PUT /consultas_sql/umbral | {"valor":0.85}. Actualiza el registro existente; número finito entre 0 y 1. |
 
-Ejemplo de entrada de /chat/jev: {"mensaje": "Convertí 100 USD a EUR", "contexto": []}. El campo contexto es opcional. La respuesta pública contiene estado, respuesta en lenguaje natural y herramientas ejecutadas. Si faltan datos o hay ambigüedad, puede pedir aclaración sin ejecutar MCP. Las consultas de capacidades describen catálogos sin ejecutar herramientas.
+Costos devuelve registros, pagina, total_paginas, total_registros, desde, hasta, filtros y totales costo_jev, costo_openai, tokens_jev y tokens_openai. Los filtros afectan los registros paginados; los totales por grupo se calculan sobre la tabla completa. Una lista vacía puede ser una respuesta exitosa.
 
-## Respuestas y manejo de errores
+Los errores distinguen datos inválidos (400), registro inexistente (404), conflicto (409), validación (422), base o tabla no disponible (503) y fallo interno (500). En la página, un 404 de **listados** de Costos o MCPs representa ausencia de información y se muestra junto a la tabla; los demás errores, incluidas escrituras y Umbral, abren el modal.
 
-Todo el procesamiento de `routers/chat_jev.py` está dentro del `try`: la llamada a `responder_chat_jev`, la lectura del resultado y la construcción de `RespuestaChat`.
+## Permisos y destinos
 
-| Resultado | Respuesta pública |
-| --- | --- |
-| Respuesta válida, aclaración o ausencia de herramientas | HTTP 200 con `estado`, `respuesta` y `herramientas`. |
-| Resultado de negocio `error_mcp` | HTTP 200 con el texto precedido por «La herramienta informó un error: ». |
-| `HTTPException as e` | Conserva `e.status_code`, `e.detail` y `e.headers` mediante `JSONResponse`. |
-| `Exception as e` inesperada | HTTP 500 con un detalle público genérico. |
-| Entrada inválida | FastAPI responde HTTP 422 antes de ejecutar el cuerpo del endpoint. |
+La política local vincula **nombre de MCP + URL + herramientas**. Actualmente autoriza:
 
-Ambos bloques `except` capturan la excepción como `e`, la incluyen en `logger.error` y devuelven una respuesta sin `raise`. Los fallos HTTP conocidos conservan su código: normalmente 502 por servicios o respuestas inválidas, 503 por configuración o catálogo y 504 por timeout. Un fallo al construir la respuesta también queda capturado por el bloque genérico.
+| MCP | Destino | Herramientas |
+| --- | --- | --- |
+| mcp_clima | http://127.0.0.1:8005/mcp | get_temperatura, get_precipitaciones, get_sensacion_termica, get_presion, get_pronostico |
+| mcp_finanzas | http://127.0.0.1:8006/mcp | convertir_divisas, get_tipos_cambio, get_monedas, get_proveedores |
 
-Ejemplo ilustrativo de un fallo HTTP 503:
+El coordinador comprueba ese vínculo al preparar la selección y nuevamente antes de ejecutar; el cliente MCP también exige autorización de herramienta y destino. Una revocación no queda en caché. Un permiso ausente devuelve 403; una política ausente o inválida, 503. Los permisos son globales y se administran en el JSON local, sin una tabla o endpoint adicional de permisos.
 
-```json
-{"detail": "Configuración o catálogo no disponible."}
-```
+Solo se admiten destinos MCP HTTP loopback con puerto explícito: localhost, 127.0.0.1 o ::1. Las rutas vacía, /, /mcp y /mcp/ se normalizan a /mcp. Se rechazan credenciales, parámetros, fragmentos, espacios, otros hosts y variantes numéricas alternativas. localhost se convierte en 127.0.0.1 antes de conectar, sin resolver DNS; IPv6 requiere su propia autorización. El cliente no sigue redirecciones. Estos controles no restringen las consultas externas que un MCP realiza internamente a su proveedor.
 
-El detalle concreto proviene de la excepción. Ante un fallo inesperado se devuelve HTTP 500:
+Para agregar o cambiar un MCP:
 
-```json
-{"detail": "Error interno al procesar la respuesta del chat."}
-```
+1. Revisar el servidor, su destino y las herramientas que se permitirán ejecutar.
+2. Autorizar el destino en [destinos_mcp.json de Jeveador](../jeveador/destinos_mcp.json).
+3. Agregar nombre, destino y herramientas aprobadas a [politica_mcp.json](politica_mcp.json).
+4. Registrar el MCP mediante la administración SQL y habilitarlo cuando esté disponible.
 
-El detalle interno se registra en consola y no se agrega a ese cuerpo público. Esta respuesta de chat utiliza `detail`; la administración SQL conserva su contrato `resultado/salida`.
+Estar habilitado en SQLite o aparecer en el catálogo no concede permisos. Las capacidades se descubren en cada evaluación; sus descripciones no se mantienen en la base. Una herramienta nueva también necesita aprobación en la política de ejecución.
 
-Los endpoints administrativos devuelven {"resultado": bool, "salida": datos} y conservan los códigos HTTP de error. Las operaciones SQL internas devuelven (resultado, salida). El detalle de rutas y contratos está en el [README general](../README.md#api-administrativa-sql).
+## Validación de catálogos y resultados
+
+El catálogo redescubierto admite hasta 64 herramientas y 64 páginas, descripciones de hasta 8192 caracteres, esquemas de hasta 64 KiB y catálogo de hasta 512 KiB. Los esquemas deben ser objetos válidos, sin referencias externas, con hasta 32 niveles y 10000 nodos.
+
+Los resultados solo admiten bloques de texto y/o un objeto structuredContent: hasta 32 bloques, 64 KiB UTF-8 por bloque, 128 KiB totales, 16 niveles y 10000 nodos. Se rechazan números JSON no finitos, imágenes, audio y recursos. Solo se trasladan content textual, structuredContent e isError; se eliminan metadatos y campos desconocidos. Un resultado inválido devuelve 502 antes de la redacción. Los límites se aplican después de recibir y decodificar la respuesta, no como límite del transporte HTTP.
+
+El texto externo sigue siendo contenido no confiable. Estas barreras controlan destinos, permisos y estructura; no garantizan veracidad ni inmunidad del modelo ante toda manipulación. El umbral de Jeveador mide aceptación de una clasificación, no autorización de ejecución. La autenticación administrativa queda fuera del alcance de estos cambios.
+
+## Errores y consumo
+
+El chat devuelve {"detail":"..."} para errores técnicos. Conserva códigos y cabeceras de excepciones HTTP conocidas: 403 por permisos, 502 por servicios o respuestas inválidas, 503 por configuración o catálogo, 504 por timeout. La entrada inválida responde 422 y un fallo inesperado responde 500 con detalle genérico. El router registra la excepción y cubre también la construcción de la respuesta pública.
+
+Las llamadas a OpenAI registran tokens y costo estimado en billing. La estimación usa las tarifas definidas en el código; no representa una factura del proveedor. El consumo de Jev lo registra Jeveador en la misma base. Un fallo de persistencia puede interrumpir la consulta. El contexto de conversación no persiste en la API.
 
 ## Organización
 
-| Ubicación | Contenido |
+| Ubicación | Responsabilidad |
 | --- | --- |
-| main.py y routers/ | Aplicación y rutas HTTP. |
-| schemas/ | Contratos y validación. |
-| funciones/chat_jev_funciones.py | Selección, preparación y ejecución con Jeveador. |
+| main.py | Crea FastAPI y registra routers. |
+| routers/chat_jev.py, routers/consultas_sql.py | Contratos HTTP. |
+| schemas/ | Entradas, salidas y validación. |
+| funciones/chat_jev_funciones.py | Coordinación, preparación y ejecución. |
 | funciones/respuesta_jev_funciones.py | Aclaraciones, capacidades y redacción. |
-| funciones/mcp_funciones.py y openai_funciones.py | Cliente MCP compartido y cliente OpenAI. |
-| funciones/base_sqlite.py y consultas_sql_funciones.py | Persistencia y administración SQL. |
-| funciones/billing.py | Estimaciones y guardado de consumo. |
+| funciones/mcp_funciones.py, funciones/openai_funciones.py | Clientes MCP y OpenAI. |
+| funciones/seguridad_mcp.py, politica_mcp.json | Permisos, destinos y validación de catálogo y resultados. |
+| funciones/base_sqlite.py, funciones/consultas_sql_funciones.py | Persistencia y administración. |
+| funciones/billing.py | Estimación y registro del consumo. |
 | logging.json | Configuración de consola. |
-| tests/ | Suites de pruebas. |
+| tests/ | Pruebas aisladas e integración optativa. |
+
+Las operaciones SQL y los controles de seguridad devuelven (resultado, salida): (True, datos) o (False, {"status_code": codigo}). Los routers adaptan esos retornos al contrato público correspondiente. El chat mantiene sus modelos y excepciones HTTP internas.
 
 ## Pruebas
 
-Desde api:
+Desde api/:
 
-```powershell
+~~~powershell
 .\api\Scripts\python.exe -m unittest discover -s tests -t . -v
-```
+~~~
 
-Las pruebas usan HTTP simulado y bases temporales. Bloquean la carga de configuración local antes de importar los módulos que la usan; no consultan proveedores reales. Cubren /chat/jev, ausencia de rutas retiradas, descubrimiento y ejecución MCP, cliente OpenAI, coordinación, redacción, contexto, billing y administración SQL.
+La suite aislada simula servicios externos, utiliza bases temporales y bloquea la carga de configuración local antes de importar los módulos. Cubre coordinación, contexto, contratos HTTP, administración, consumo, permisos, revocaciones, destinos y catálogos/resultados adversariales.
 
-La última ejecución de la suite completó **80 pruebas aprobadas**, incluidas la conservación de códigos y cabeceras HTTP, el log de la excepción y los fallos al construir la respuesta. Esta actualización documental no volvió a ejecutar la suite.
+Las pruebas contra servicios encendidos son optativas y no forman parte del descubrimiento anterior:
 
-## Límites
+~~~powershell
+.\api\Scripts\python.exe tests\pruebas_integracion_viva.py
+~~~
 
-/chat/jev ejecuta como máximo una herramienta por petición. El contexto lo envía el cliente y no persiste en el servidor. Las llamadas reales a proveedores registran consumo en billing; un fallo de persistencia puede interrumpir la respuesta. El éxito de las pruebas simuladas no garantiza la selección real de los modelos. Consultá el README general para timeouts y pendientes.
+Este segundo comando requiere los componentes y proveedores disponibles y puede generar consumo real y registros de billing. Escribe evidencia de integración en resultados_pruebas/.evidencias/.
+
+La ejecución registrada completó **96 pruebas aisladas de API** y **9 pruebas HTTP de integración**, todas aprobadas. Los [informes individuales](../resultados_pruebas/index.html) distinguen simulaciones y solicitudes reales; incluyen también 68 pruebas de Jeveador. Son evidencia de esa ejecución, no garantía para futuras respuestas de modelos o proveedores. Esta actualización documental no volvió a ejecutar las pruebas.
+
+Volver al [README general](../README.md).

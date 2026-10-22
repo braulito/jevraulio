@@ -14,6 +14,7 @@ from pydantic import ValidationError
 from funciones.base_sqlite import obtener_mcp
 from funciones.mcp_funciones import llamar_herramienta_mcp, obtener_herramientas_mcp
 from funciones import openai_funciones as llm
+from funciones.seguridad_mcp import autorizar_herramienta, validar_resultado_mcp
 from funciones.respuesta_jev_funciones import redactar_aclaracion, redactar_capacidades, redactar_respuesta
 from schemas.chat import LlamadaHerramienta
 from schemas.chat_jev import ConsultaChatJev, RecomendacionJev, RespuestaChatJev
@@ -127,6 +128,10 @@ async def obtener_catalogo_evaluado(evaluacion) -> tuple[dict, list[dict]]:
     herramientas = [t for t in catalogo if t["name"] in permitidas]
     if {t["name"] for t in herramientas} != permitidas:
         raise HTTPException(502, "El catálogo del MCP no contiene las herramientas recomendadas por Jeveador.")
+    for herramienta in herramientas:
+        permitido, salida = autorizar_herramienta(herramienta["name"], mcp["url"], evaluacion.mcp_evaluado)
+        if not permitido:
+            raise HTTPException(salida["status_code"], "Una herramienta recomendada no está autorizada para ese MCP.")
     return mcp, herramientas
 
 
@@ -186,7 +191,14 @@ async def coordinar_chat_jev(consulta: ConsultaChatJev) -> RespuestaChatJev:
     nombre, argumentos, aclaracion = await preparar_argumentos(consulta.mensaje, herramientas, consulta.contexto)
     if nombre is None:
         return RespuestaChatJev(estado="requiere_aclaracion", respuesta=aclaracion, **comunes)
-    resultado = await llamar_herramienta_mcp(nombre, argumentos, mcp["url"])
+    permitido, salida = autorizar_herramienta(nombre, mcp["url"], seleccion.mcp_evaluado)
+    if not permitido:
+        raise HTTPException(salida["status_code"], "La herramienta seleccionada no tiene permiso de ejecución.")
+    resultado = await llamar_herramienta_mcp(nombre, argumentos, salida)
+    correcto, salida = validar_resultado_mcp(resultado)
+    if not correcto:
+        raise HTTPException(salida["status_code"], "El resultado MCP no cumple los límites o la estructura admitida.")
+    resultado = salida
     texto = await redactar_respuesta(consulta.mensaje, consulta.contexto, nombre, argumentos, resultado)
     error_mcp = bool(resultado.get("isError"))
     contenido = resultado.get("structuredContent")

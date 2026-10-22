@@ -1,19 +1,21 @@
 # MCP Clima
 
-Servidor FastMCP de Jevraulio, con cinco herramientas meteorológicas para Buenos Aires (CABA). Todas usan el último registro del pronóstico horario de Open-Meteo y expresan la fecha y hora en GMT-3. El dato puede ser futuro: debe presentarse como pronóstico, no como condición actual.
+Servidor FastMCP de JEVraulio, con cinco herramientas meteorológicas para Buenos Aires (CABA). Todas usan el último registro del pronóstico horario de Open-Meteo y expresan la fecha y hora en GMT-3. El dato puede ser futuro: debe presentarse como pronóstico, no como condición actual.
 
 ## Arranque y configuración
 
-Desde esta carpeta, en PowerShell:
+Desde mcp_clima/, con Python 3.10 o superior, en PowerShell:
 
 ```powershell
+# Crear el entorno solo la primera vez.
+python -m venv clima
 .\clima\Scripts\python.exe -m pip install -r requirements.txt
 .\clima\Scripts\python.exe server.py
 ```
 
-Si necesitás crear el entorno: `python -m venv clima`. El comando `server.py` inicia el servidor; no ejecuta una prueba individual.
+El comando `server.py` inicia el servidor; no ejecuta una prueba individual.
 
-Endpoint MCP: `http://127.0.0.1:8005/mcp` (Streamable HTTP). Para que Jeveador lo consulte, registrá la URL completa en `mcps` con el nombre `mcp_clima` y `habilitado = 1`. Habilitado significa que debe consultarse; el servidor también debe estar encendido.
+Endpoint MCP: `http://127.0.0.1:8005/mcp` (Streamable HTTP con respuestas JSON). Publica herramientas MCP; la ejecución para el chat corresponde a la API, después de la evaluación de Jeveador.
 
 `server.py` carga explícitamente el `.env` ubicado junto al script mediante `python-dotenv`. Requiere estas cuatro variables, con el formato `NOMBRE=URL`, una por línea:
 
@@ -27,6 +29,15 @@ Endpoint MCP: `http://127.0.0.1:8005/mcp` (Streamable HTTP). Para que Jeveador l
 Las URLs deben consultar las coordenadas de CABA (`latitude=-34.6131`, `longitude=-58.3772`) y devolver `hourly.time` en GMT, como los endpoints definidos para este componente. La conversión a GMT-3 se realiza en las herramientas; no configurar el endpoint para devolver horas locales ya convertidas.
 
 Las variables existentes en el proceso tienen prioridad. Si alguna URL falta o está vacía, el arranque informa su nombre sin mostrar valores. La carga automática adicional de `.env` por FastMCP está desactivada. Reiniciá el MCP después de cambiar URLs o descripciones. No hace falta una clave de OpenAI u OpenRouter para ejecutar estas funciones.
+
+## Incorporación a JEVraulio
+
+1. Arrancar el servidor y revisar sus herramientas.
+2. Comprobar que [destinos_mcp.json de Jeveador](../jeveador/destinos_mcp.json) autorice `http://127.0.0.1:8005/mcp`.
+3. Comprobar que [politica_mcp.json de API](../api/politica_mcp.json) autorice el nombre `mcp_clima`, ese destino y las cinco herramientas.
+4. Registrar nombre y URL completa desde la pantalla MCPs o la administración SQL, si no existen. El alta administrativa queda deshabilitada; habilitarla cuando el servidor esté disponible.
+
+Las políticas actuales incluyen este MCP. Habilitarlo en SQLite no concede permisos por sí solo. Jeveador descubre el catálogo en cada petición y la API lo vuelve a consultar antes de ejecutar. Agregar una herramienta requiere aprobarla en la política de ejecución. Arrancar este servidor no registra ni modifica filas de la base compartida.
 
 ## Herramientas y selección
 
@@ -57,7 +68,7 @@ Ejemplos ficticios:
 {"estado": "Ok", "respuesta": "2026-10-18 20:00, 1013.2 hPa"}
 ```
 
-El porcentaje indica probabilidad de precipitaciones, no milímetros, intensidad ni certeza de lluvia. La sensación térmica es temperatura aparente. La presión es en superficie y no está reducida al nivel del mar. Las herramientas no permiten elegir fecha u horario ni informan el día completo, máximas o tendencias.
+El porcentaje indica probabilidad de precipitaciones, no milímetros, intensidad ni certeza de lluvia. La sensación térmica es temperatura aparente. La presión es en superficie y no está reducida al nivel del mar. Las herramientas no permiten elegir fecha u horario ni informan el día completo, máximas o tendencias. Un pedido sobre ahora, hoy o mañana no puede resolverse usando un registro cuyo horario no coincide con el solicitado.
 
 Los fallos HTTP, de conexión o de datos devuelven `{"estado": "Error", "respuesta": "Error interno", "status_code": 500}`. Ese campo es parte del JSON de negocio y no cambia por sí solo el estado HTTP del protocolo MCP.
 
@@ -93,7 +104,15 @@ Si las cuatro consultas fallan o sus respuestas no contienen datos utilizables, 
 
 La redacción del pronóstico conjunto debe incluir las fechas, horas, unidades y zona GMT-3, informar las variables faltantes y respetar horarios diferentes. No debe presentar el último registro como temperatura o condiciones actuales.
 
-## Verificación
+## Límites y contratos internos
+
+El componente solo consulta las cuatro variables publicadas para CABA. Las reglas de selección de los docstrings orientan al modelo; el destino está configurado en las URLs locales y no se recibe una ciudad como argumento.
+
+`obtener_datos_horarios()` devuelve el objeto hourly o propaga el fallo a la herramienta. `combinar_pronostico()` y las herramientas existentes devuelven directamente el JSON de negocio descrito arriba. No utilizan el contrato de tupla de las operaciones de administración SQL. Los permisos de API/Jeveador no agregan autenticación propia a este servidor ni restringen sus consultas internas a Open-Meteo.
+
+La API valida los resultados antes de redactar y mantiene el modelo final sin herramientas disponibles. Esto no demuestra la veracidad del proveedor ni inmunidad ante toda manipulación de texto externo.
+
+## Pruebas
 
 La suite está en `tests/`. Las pruebas que importan el servidor bloquean la carga de `.env` y proporcionan URLs ficticias; el agregador se prueba con funciones simuladas:
 
@@ -101,9 +120,9 @@ La suite está en `tests/`. Las pruebas que importan el servidor bloquean la car
 .\clima\Scripts\python.exe -m unittest discover -s tests -t . -v
 ```
 
-Cubren las 16 combinaciones de éxito/fallo, fechas diferentes, excepciones, respuestas malformadas y llamada a las cuatro funciones. La implementación completó estas 4 pruebas y 42 pruebas de coordinación/redacción de la API con dependencias simuladas. La revisión posterior de descripciones verificó su sintaxis y alcance. Estos resultados no garantizan las decisiones de Jev ni el texto exacto de los modelos en producción.
+La suite cubre las variables, el descubrimiento y el agregador: sus 16 combinaciones de éxito/fallo, fechas diferentes, excepciones, respuestas malformadas y llamada a las cuatro funciones. La verificación previa documentada fue de **22 pruebas aprobadas** con datos simulados. Para ejecutar solo el agregador: `python -m unittest tests.test_pronostico -v`.
 
-Las 22 pruebas de la suite completa pasaron con datos simulados, sin configuración local ni consultas a Open-Meteo. Para ejecutar solo el agregador: `python -m unittest tests.test_pronostico -v`.
+Los [informes de integración](../resultados_pruebas/index.html) registran además una consulta real del pronóstico conjunto a través de API y Jeveador, aprobada. Esto no garantiza todas las decisiones futuras del modelo ni todos los estados del proveedor. Esta actualización documental no volvió a ejecutar pruebas ni consultas a Open-Meteo.
 
 ## Organización
 
@@ -113,3 +132,5 @@ Las 22 pruebas de la suite completa pasaron con datos simulados, sin configuraci
 | `funciones.py` | Consultas HTTP y combinación del pronóstico. |
 | `requirements.txt` | Dependencias. |
 | `tests/` | Variables meteorológicas, descubrimiento y agregador. |
+
+Volver al [README general](../README.md).

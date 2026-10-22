@@ -21,6 +21,7 @@ from pydantic import ValidationError
 
 from schemas.chat import LlamadaHerramienta, RespuestaChat
 from schemas.chat_jev import ConsultaChatJev, RecomendacionJev, RespuestaChatJev
+from funciones.seguridad_mcp import validar_resultado_mcp
 
 
 def cargar_funciones():
@@ -31,6 +32,7 @@ def cargar_funciones():
     arbol.body = [n for n in arbol.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
     contexto = dict(globals())
     contexto.update(
+        autorizar_herramienta=Mock(side_effect=lambda nombre, url, mcp=None: (True, url)),
         obtener_mcp=Mock(return_value={"nombre": "autos", "url": "http://mcp.test/mcp"}),
         obtener_herramientas_mcp=AsyncMock(), llamar_herramienta_mcp=AsyncMock(),
         llm=SimpleNamespace(consultar_llm=AsyncMock(), extraer_texto=Mock(return_value="¿Qué auto?")),
@@ -78,6 +80,32 @@ class ChatJevTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r.estado, "sin_coincidencias")
         self.assertEqual(r.respuesta, "No tengo las herramientas necesarias para responder tu pregunta.")
         self.sin_ejecucion()
+
+    async def test_recomendacion_de_jev_no_sustituye_permiso_local(self):
+        """Una recomendación válida de Jev se bloquea si la política no autoriza la herramienta."""
+        self.c["autorizar_herramienta"].side_effect = None
+        self.c["autorizar_herramienta"].return_value = (False, {"status_code": 403})
+        with self.assertRaises(HTTPException) as error:
+            await self.flujo([evaluacion()])
+        self.assertEqual(error.exception.status_code, 403)
+        self.c["llamar_herramienta_mcp"].assert_not_awaited()
+        self.c["redactar_respuesta"].assert_not_awaited()
+
+    async def test_permiso_revocado_despues_de_preparar_argumentos_impide_ejecutar(self):
+        """La API vuelve a autorizar justo antes de ejecutar, incluso si antes permitió preparar."""
+        self.c["autorizar_herramienta"].side_effect = [(True, "http://mcp.test/mcp"), (False, {"status_code": 403})]
+        with self.assertRaises(HTTPException) as error:
+            await self.flujo([evaluacion()])
+        self.assertEqual(error.exception.status_code, 403)
+        self.c["llamar_herramienta_mcp"].assert_not_awaited()
+
+    async def test_resultado_malformado_no_se_envia_al_redactor(self):
+        """Un resultado inválido no contamina la llamada final a la LLM."""
+        self.c["llamar_herramienta_mcp"].return_value = {"content": [{"type": "resource_link", "uri": "http://externo.invalid"}]}
+        with self.assertLogs(level="ERROR"), self.assertRaises(HTTPException) as error:
+            await self.flujo([evaluacion()])
+        self.assertEqual(error.exception.status_code, 502)
+        self.c["redactar_respuesta"].assert_not_awaited()
 
     async def test_capacidades_usa_catalogos_de_jev_sin_ejecutar_tools(self):
         capacidades = [{"nombre": "mcp_autos", "herramientas": [{

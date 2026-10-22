@@ -10,6 +10,11 @@ from funciones import mcp_funciones as mcp
 
 
 class DescubrimientoTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        permiso = patch.object(mcp, "validar_destino", side_effect=lambda url: (True, url))
+        permiso.start()
+        self.addCleanup(permiso.stop)
+
     async def test_paginacion_descripciones_y_opcionales(self):
         session = AsyncMock()
         schema = {"type": "object", "properties": {"cantidad": {"type": "integer", "default": 1}}}
@@ -36,6 +41,11 @@ class DescubrimientoTests(unittest.IsolatedAsyncioTestCase):
 
 
 class EjecucionMcpTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        permiso = patch.object(mcp, "autorizar_herramienta", side_effect=lambda nombre, url: (True, url))
+        permiso.start()
+        self.addCleanup(permiso.stop)
+
     async def test_url_explicita_y_resultado_mcp_se_conservan(self):
         for nombre, timeout, is_error in [("convertir_divisas", 30, False), ("get_pronostico", 60, True)]:
             with self.subTest(nombre=nombre):

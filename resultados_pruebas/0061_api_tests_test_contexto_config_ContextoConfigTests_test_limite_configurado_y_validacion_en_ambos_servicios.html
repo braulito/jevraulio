@@ -1,0 +1,30 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Limite configurado y validacion en ambos servicios</title><style>
+*{box-sizing:border-box}body{margin:0;background:#f5f7fb;color:#172339;font:16px/1.65 system-ui,sans-serif}
+main{max-width:1120px;margin:auto;padding:40px 24px}a{color:#145bc2}h1{font-size:clamp(26px,4vw,38px);line-height:1.25}
+h2{font-size:20px;margin-top:0}.muted{color:#617087}.card{background:white;border:1px solid #dfe5ef;border-radius:14px;padding:24px;margin:20px 0}
+.badge{display:inline-block;border-radius:20px;padding:5px 14px;font-size:13px;font-weight:700;background:#e7edf8;color:#214a89}
+.APROBADA{background:#dcf5e6;color:#155c33}.FALLIDA,.ERROR{background:#ffe3e3;color:#9c2222}.OMITIDA{background:#fff0ce;color:#805800}
+pre{overflow:auto;padding:18px;background:#111c30;color:#e1eaff;border-radius:10px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}
+code{font-family:Consolas,monospace}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px;border-bottom:1px solid #e5eaf2;vertical-align:top}
+th{color:#59697f;font-size:13px}input{width:100%;padding:12px;border:1px solid #c4cede;border-radius:8px;font:inherit}details summary{cursor:pointer;color:#145bc2}
+.stats{display:flex;gap:12px;flex-wrap:wrap}.stats .card{flex:1;min-width:150px}.number{display:block;font-size:30px;font-weight:750}
+@media(max-width:650px){main{padding:22px 12px}.card{padding:16px}table{font-size:13px}th,td{padding:8px}.componente{display:none}}
+</style></head><body><main><a href="index.html">← Índice de pruebas</a><h1>Limite configurado y validacion en ambos servicios</h1><span class="badge APROBADA">APROBADA</span> <span class="badge">Aislada / simulada</span><p class="muted">2026-10-21T20:52:22-03:00 · 0.047 segundos · api</p><section class="card"><h2>Qué se probó</h2><p>Limite configurado y validacion en ambos servicios.</p></section><section class="card"><h2>Resultado esperado</h2><p>Todas las aserciones de esta prueba deben cumplirse; los casos de rechazo deben conservar su código de error.</p></section><section class="card"><h2>Alcance de esta evidencia</h2><p>Servicios HTTP, LLM y catálogos se simulan; SQLite y políticas se prueban con archivos temporales. Esto verifica el código y no demuestra inmunidad del modelo ante todos los ataques.</p></section><section class="card"><h2>Resultado obtenido</h2><pre>La prueba finalizó sin errores ni aserciones fallidas.</pre></section><details class="card"><summary>Código exacto de la prueba</summary><pre>    def test_limite_configurado_y_validacion_en_ambos_servicios(self):
+        for servicio, archivo_schema, modelo in (
+            (&quot;api&quot;, &quot;chat_jev.py&quot;, &quot;ConsultaChatJev&quot;),
+            (&quot;jeveador&quot;, &quot;jev.py&quot;, &quot;ConsultaJev&quot;),
+        ):
+            with self.subTest(servicio=servicio):
+                obtener = runpy.run_path(str(RAIZ / servicio / &quot;funciones/contexto_config.py&quot;))[&quot;obtener_max_contexto&quot;]
+                with patch.dict(os.environ, {&quot;MAX_CONTEXTO&quot;: &quot;3&quot;}, clear=True):
+                    self.assertEqual(obtener(), 3)
+                    arbol = ast.parse((RAIZ / servicio / &quot;schemas&quot; / archivo_schema).read_text(encoding=&quot;utf-8&quot;))
+                    arbol.body = [n for n in arbol.body if not isinstance(n, (ast.Import, ast.ImportFrom))]
+                    contexto = dict(globals(), obtener_max_contexto=obtener)
+                    exec(compile(arbol, archivo_schema, &quot;exec&quot;), contexto)
+                    consulta = contexto[modelo]
+                    consulta(mensaje=&quot;sí&quot;, contexto=[&quot;mensaje&quot;] * 3)
+                    self.assertEqual(consulta.model_json_schema()[&quot;properties&quot;][&quot;contexto&quot;][&quot;maxItems&quot;], 3)
+                    with self.assertRaises(ValidationError):
+                        consulta(mensaje=&quot;sí&quot;, contexto=[&quot;mensaje&quot;] * 4)
+</pre></details><p class="muted">Identificador: <code>api.tests.test_contexto_config.ContextoConfigTests.test_limite_configurado_y_validacion_en_ambos_servicios</code></p></main></body></html>

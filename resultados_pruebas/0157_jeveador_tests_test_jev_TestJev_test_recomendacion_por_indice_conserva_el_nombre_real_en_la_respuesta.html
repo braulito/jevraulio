@@ -1,0 +1,25 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Recomendacion por indice conserva el nombre real en la respuesta</title><style>
+*{box-sizing:border-box}body{margin:0;background:#f5f7fb;color:#172339;font:16px/1.65 system-ui,sans-serif}
+main{max-width:1120px;margin:auto;padding:40px 24px}a{color:#145bc2}h1{font-size:clamp(26px,4vw,38px);line-height:1.25}
+h2{font-size:20px;margin-top:0}.muted{color:#617087}.card{background:white;border:1px solid #dfe5ef;border-radius:14px;padding:24px;margin:20px 0}
+.badge{display:inline-block;border-radius:20px;padding:5px 14px;font-size:13px;font-weight:700;background:#e7edf8;color:#214a89}
+.APROBADA{background:#dcf5e6;color:#155c33}.FALLIDA,.ERROR{background:#ffe3e3;color:#9c2222}.OMITIDA{background:#fff0ce;color:#805800}
+pre{overflow:auto;padding:18px;background:#111c30;color:#e1eaff;border-radius:10px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}
+code{font-family:Consolas,monospace}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px;border-bottom:1px solid #e5eaf2;vertical-align:top}
+th{color:#59697f;font-size:13px}input{width:100%;padding:12px;border:1px solid #c4cede;border-radius:8px;font:inherit}details summary{cursor:pointer;color:#145bc2}
+.stats{display:flex;gap:12px;flex-wrap:wrap}.stats .card{flex:1;min-width:150px}.number{display:block;font-size:30px;font-weight:750}
+@media(max-width:650px){main{padding:22px 12px}.card{padding:16px}table{font-size:13px}th,td{padding:8px}.componente{display:none}}
+</style></head><body><main><a href="index.html">← Índice de pruebas</a><h1>Recomendacion por indice conserva el nombre real en la respuesta</h1><span class="badge APROBADA">APROBADA</span> <span class="badge">Aislada / simulada</span><p class="muted">2026-10-21T20:52:19-03:00 · 0.0 segundos · jeveador</p><section class="card"><h2>Qué se probó</h2><p>Recomendacion por indice conserva el nombre real en la respuesta.</p></section><section class="card"><h2>Resultado esperado</h2><p>Todas las aserciones de esta prueba deben cumplirse; los casos de rechazo deben conservar su código de error.</p></section><section class="card"><h2>Alcance de esta evidencia</h2><p>Servicios HTTP, LLM y catálogos se simulan; SQLite y políticas se prueban con archivos temporales. Esto verifica el código y no demuestra inmunidad del modelo ante todos los ataques.</p></section><section class="card"><h2>Resultado obtenido</h2><pre>La prueba finalizó sin errores ni aserciones fallidas.</pre></section><details class="card"><summary>Código exacto de la prueba</summary><pre>    def test_recomendacion_por_indice_conserva_el_nombre_real_en_la_respuesta(self):
+        from schemas.jev import RespuestaJev
+        catalogos = [{&quot;nombre&quot;: &quot;mcp_nombre_real&quot;, &quot;herramientas&quot;: TOOLS[:1]}]
+        respuesta = RespuestaJev(answers={
+            &quot;intencion&quot;: {&quot;type&quot;: &quot;choice&quot;, &quot;choice&quot;: &quot;resolver_consulta&quot;},
+            &quot;recomendacion&quot;: {&quot;type&quot;: &quot;choice&quot;, &quot;choice&quot;: &quot;mcp_0&quot;},
+            &quot;cobertura_0&quot;: {&quot;type&quot;: &quot;choice&quot;, &quot;choice&quot;: &quot;sirve&quot;},
+            &quot;herramienta_0_0&quot;: {&quot;type&quot;: &quot;choice&quot;, &quot;choice&quot;: &quot;aplicable&quot;, &quot;confidence&quot;: 0.96},
+        })
+        resultado = jev_funciones.interpretar_respuesta(respuesta, catalogos, 0.85)
+        self.assertEqual(resultado.mcp_recomendado, &quot;mcp_nombre_real&quot;)
+        self.assertEqual(resultado.evaluaciones[0].mcp_evaluado, &quot;mcp_nombre_real&quot;)
+        self.assertEqual(resultado.evaluaciones[0].herramientas_aplicables, [TOOLS[0][&quot;name&quot;]])
+</pre></details><p class="muted">Identificador: <code>jeveador.tests.test_jev.TestJev.test_recomendacion_por_indice_conserva_el_nombre_real_en_la_respuesta</code></p></main></body></html>
